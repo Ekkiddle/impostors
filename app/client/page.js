@@ -1,8 +1,6 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { initPeer, verifyHost, sendToAll, clearConnections, reconnect, getConnIds, sendToPeer, getMyId, disconnectPeer } from '../peer/peerManager';
-import { handleClientMessages } from '../game/gameManager';
 import { useGame } from '../game/gameProvider';
 
 import SpaceBackground from '../components/SpaceBackground';
@@ -10,57 +8,40 @@ import PlayerList from '../components/PlayerList';
 
 export default function Lobby() {
   const [joined, setJoined] = useState(false);
-  const [hostId, setHostId] = useState('');
+  const [gameId, setGameId] = useState('');
   const [name, setName] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const {players} = useGame()
+  const { players, joinGame } = useGame();
 
   useEffect(() => {
-    // Attempt reconnect. If I am connected to the host, then I should just set myself as joined.
-    const init = async () => {
-      console.log("Attempting reconnect.")
-      await reconnect(handleClientMessages)
-      const host = getConnIds()[0];
-      console.log("Host: ", host)
+    // Check if we already joined a game
+    // const storedGameId = sessionStorage.getItem('gameId');
+    // const storedPlayerId = sessionStorage.getItem('playerId');
 
-      if (host){
-        setHostId(host);
-        // I should also double check to make sure that my player is in the list. If not, I shouldn't set "joined"
-        sendToPeer(host, "players|request")
-        // Wait a little bit of time before checking players list (500 ms should be fine...)
-        setTimeout(()=>{
-          console.log("Checking players")
-          if (players && players.has(getMyId())){
-            setJoined(true);
-          } else {
-            // disconnect from the host, and start process from scratch.
-            disconnectPeer(host)
-          }
-          
-        },500)
-        
-      }
-      
-    } 
-    init();
-  }, [])
-
+    // if (storedGameId && storedPlayerId) {
+    //   setGameId(storedGameId);
+    //   setJoined(true);
+    // }
+  }, []);
 
   const handleJoinClick = async () => {
-    clearConnections();
-    setErrorMsg("");
-    await initPeer(null, handleClientMessages);
-    console.log(`Attempting to connect to ${hostId}`);
-    setHostId(hostId.toUpperCase())
+    if (!gameId.trim() || !name.trim()) return;
+
     try {
-      await verifyHost(hostId.toUpperCase(), handleClientMessages, null, null, setErrorMsg("Game not found."));
-      console.log("Host verified. Joining...");
-      sendToAll(`name|${name}`);
+      setLoading(true);
+      setErrorMsg('');
+      const result = await joinGame(gameId.trim(), name.trim());
       setJoined(true);
-    } catch (err) {
-      console.error("Failed to verify host:", err);
-      setErrorMsg("Game not found.");
+      sessionStorage.setItem('gameId', result.gameCode);
+      sessionStorage.setItem('playerId', result.playerId);
+      sessionStorage.setItem('isHost', 'false');
+    } catch (error) {
+      console.error('Error joining game:', error);
+      setErrorMsg('Failed to join game. Please check the game code and try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -71,13 +52,13 @@ export default function Lobby() {
         <div className='w-full h-full flex flex-col justify-center items-center gap-y-4 p-10'>
           <div className="flex flex-col items-end gap-y-2">
             <div className="flex flex-row items-center gap-x-2">
-              <label className="text-white" htmlFor="hostId">Game Code:</label>
+              <label className="text-white" htmlFor="gameId">Game Code:</label>
               <input
                 type="text"
-                id="hostId"
-                name="hostId"
-                value={hostId}
-                onChange={(e) => setHostId(e.target.value)}
+                id="gameId"
+                name="gameId"
+                value={gameId}
+                onChange={(e) => setGameId(e.target.value)}
                 required
                 minLength="6"
                 maxLength="6"

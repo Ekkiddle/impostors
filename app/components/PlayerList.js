@@ -2,10 +2,9 @@ import React from 'react';
 import { useGame } from '../game/gameProvider';
 import SpaceManIcon from './SpaceManIcon';
 import LoadingDots from './LoadingIcon';
-import { getMyId } from '../peer/peerManager';
 
 export default function PlayerList({ isHost }) {
-  const { players } = useGame();
+  const { players, supabaseManager } = useGame();
 
   if (!players || Object.keys(players).length === 0) {
     return (
@@ -17,11 +16,11 @@ export default function PlayerList({ isHost }) {
   }
 
   // Get the current player's ID
-  const myId = getMyId
+  const myId = sessionStorage.getItem('playerId');
 
   // If the host is false, ensure the current player's card is at the top
   let sortedPlayers = Object.values(players);
-  if (!isHost) {
+  if (!isHost && myId) {
     sortedPlayers = [
       ...sortedPlayers.filter(player => player.id === myId), // Add the current player at the top
       ...sortedPlayers.filter(player => player.id !== myId), // Add all other players below

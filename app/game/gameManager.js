@@ -1,6 +1,3 @@
-// Game manager file to keep track of game components
-import { sendToAll, sendToPeer } from "../peer/peerManager";
-
 
 const players = new Map(); // key: playerId, value: { id, name, role, alive, tasks }
 let inGame = false; // variable to set if we are in a game or not (if player leaves while not inGame, remove the player)
@@ -16,6 +13,14 @@ export const registerPlayerSetter = (setter) => {
 
 // -------------------------------------------------------------
 
+import SupabaseManager from './supabaseManager';
+
+let supabaseManager = null;
+
+export const initSupabaseManager = (sm) => {
+  supabaseManager = sm;
+};
+
 const splitData = (data) => {
   const delimiterIndex = data.indexOf("|");
 
@@ -26,55 +31,8 @@ const splitData = (data) => {
     command = data.substring(0, delimiterIndex);
     message = data.substring(delimiterIndex + 1);
   }
-  return {command, message};
+  return { command, message };
 }
-
-export const handleHostMessages = (clientId, data) => {
-    // function to handle messages sent to the host
-    if (typeof data === 'object') return;
-    let {command, message} = splitData(data);
-
-    if (command === 'name'){
-      if (!players.has(clientId)) {
-        addPlayer(clientId, message);
-        console.log(`Added new player: ${message} (ID: ${clientId})`);
-      } else {
-        changeName(clientId, message);
-        console.log(`Changed name for ${clientId} to ${message}`);
-      }
-    } else if (command === 'players'){
-      // For if the client requests the list of players. (Most of the game info is in this list. Including the tasks that
-      // players need to complete.) For now, I am just going to broadcast players to everyone.
-      // May change to that specific client.
-      broadcastPlayers();
-    }
-    else if (command === 'color'){
-      changeColor(clientId, message);
-    } else if (command === 'alive'){
-      changeAlive(clientId, message);
-      // Impostors win if the person they killed makes them win
-      checkWinConditions();
-    } else if (command === 'quit'){
-      let name = players.get(clientId).name;
-      console.log(`${name} quit the game`);
-      removePlayer(clientId);
-      // also check win conditions in case the player quiting changed the win
-      checkWinConditions();
-    }
-};
-
-export const handleClientMessages = (hostId, data) => {
-    // function to handle messages sent to the client from the host
-    if (typeof data === 'object') return;
-    let {command, message} = splitData(data);
-
-    if (command === 'players'){
-      //set list of players
-      const playersObj = JSON.parse(message);
-      console.log("Updating players")
-      if (updatePlayersState) updatePlayersState(playersObj);
-    }
-};
 
 // --------------------------------------------------------------------------------------
 // Interact with players
@@ -83,39 +41,50 @@ export const handleClientMessages = (hostId, data) => {
 const broadcastPlayers = () => {
   reloadPlayers();
   const playersObj = Object.fromEntries(players);
-  const playerString = JSON.stringify(playersObj);
-  sessionStorage.setItem('players', playerString);
-  const send = `players|${playerString}`;
-  sendToAll(send);
+  // Removed sendToAll since using Supabase real-time
   if (updatePlayersState) updatePlayersState(playersObj);
 };
 
 // Reload players if lost
-const reloadPlayers = () => {
-  if (players.size === 0) {  // Check if the players map is empty
-    const playersObj = JSON.parse(sessionStorage.getItem('players'));
-    
-    if (playersObj) {  // Ensure playersObj is not null
-      console.log("Players Object: ", playersObj)
-      players.clear();  // Clear the current map to start fresh
-
-      // Populate the map with the stored players
-      Object.entries(playersObj).forEach(([id, playerData]) => {
-        players.set(id, playerData);
+const reloadPlayers = async () => {
+  if (supabaseManager) {
+    try {
+      const playersData = await supabaseManager.getPlayers();
+      players.clear();
+      playersData.forEach(player => {
+        players.set(player.id, player);
       });
+      const playersObj = Object.fromEntries(players);
+      if (updatePlayersState) updatePlayersState(playersObj);
+    } catch (error) {
+      console.error('Error loading players from Supabase:', error);
+    }
+  } else {
+    // Fallback to sessionStorage
+    if (players.size === 0) {
+      const playersObj = JSON.parse(sessionStorage.getItem('players'));
 
-      
-      
-      const playersObj2 = Object.fromEntries(players);
-      // Call the updatePlayersState function if defined
-      if (updatePlayersState) updatePlayersState(playersObj2);
+      if (playersObj) {
+        console.log("Players Object: ", playersObj)
+        players.clear();
+
+        // Populate the map with the stored players
+        Object.entries(playersObj).forEach(([id, playerData]) => {
+          players.set(id, playerData);
+        });
+
+
+
+        const playersObj2 = Object.fromEntries(players);
+        if (updatePlayersState) updatePlayersState(playersObj2);
+      }
     }
   }
 };
 
 const addPlayer = (id, name) => {
   const color = generateUniqueColor();
-  players.set(id, {
+  const playerData = {
     id,
     name,
     color,
@@ -123,7 +92,14 @@ const addPlayer = (id, name) => {
     alive: true,
     role: 'pending',
     tasks: []
-  });
+  };
+  players.set(id, playerData);
+  if (supabaseManager) {
+    supabaseManager.addPlayerForHost({
+      game_id: supabaseManager.gameId,
+      ...playerData
+    }).catch(error => console.error('Error adding player to Supabase:', error));
+  }
   broadcastPlayers();
 };
 
@@ -132,15 +108,21 @@ const changeName = (id, name) => {
     const existingPlayer = players.get(id);
     existingPlayer.name = name; // update the name
     players.set(id, existingPlayer);
+    if (supabaseManager) {
+      supabaseManager.updatePlayerById(id, { name }).catch(error => console.error('Error updating name in Supabase:', error));
+    }
     broadcastPlayers();
   }
 }
 
 const changeColor = (id, color) => {
-  if (!isColorTaken(color) && (players.has(id))){
+  if (!isColorTaken(color) && (players.has(id))) {
     const existingPlayer = players.get(id);
     existingPlayer.color = color; // update the name
     players.set(id, existingPlayer);
+    if (supabaseManager) {
+      supabaseManager.updatePlayerById(id, { color }).catch(error => console.error('Error updating color in Supabase:', error));
+    }
     broadcastPlayers();
   }
 }
@@ -150,6 +132,9 @@ const changeAlive = (id, alive) => {
     const existingPlayer = players.get(id);
     existingPlayer.alive = alive; // update the name
     players.set(id, existingPlayer);
+    if (supabaseManager) {
+      supabaseManager.updatePlayerById(id, { alive }).catch(error => console.error('Error updating alive in Supabase:', error));
+    }
     broadcastPlayers();
   }
 }
@@ -157,12 +142,15 @@ const changeAlive = (id, alive) => {
 export const changeConnection = (id, status) => {
   if (players.has(id)) {
     // If status is false, and we are not inGame yet, remove the player.
-    if (!inGame && !status){
+    if (!inGame && !status) {
       removePlayer(id)
     }
     const existingPlayer = players.get(id);
     existingPlayer.connected = status; // update the name
     players.set(id, existingPlayer);
+    if (supabaseManager) {
+      supabaseManager.updatePlayerById(id, { connected: status }).catch(error => console.error('Error updating connection in Supabase:', error));
+    }
     broadcastPlayers();
   }
 }
@@ -170,39 +158,45 @@ export const changeConnection = (id, status) => {
 export const removePlayer = (id) => {
   console.log("Removing Player ", id)
   players.delete(id);
-  const playersObj = Object.fromEntries(players);
-  const playerString = JSON.stringify(playersObj);
-  sessionStorage.setItem('players', playerString);
+  if (supabaseManager) {
+    supabaseManager.removePlayer(id).catch(error => console.error('Error removing player from Supabase:', error));
+  }
   broadcastPlayers();
 };
 
 export const clearPlayers = () => {
   console.log("Clearing players")
   players.clear();
-  console.log("Test cleared: ", players)
-  const playersObj = Object.fromEntries(players);
-  const playerString = JSON.stringify(playersObj);
-  sessionStorage.setItem('players', playerString);
+  // Removed sessionStorage
   if (updatePlayersState) {
     console.log("Updating state")
-    updatePlayersState(playersObj);
-  } 
+    updatePlayersState({});
+  }
 }
 
-export const assignRoles = () => {
-  reloadPlayers();
-  const ids = Array.from(players.keys());
-  const shuffled = shuffleArray(ids);
-  // default impostors:crewmates is 1:4 Second impostor at 10 players
-  const impostorCount = Math.max(1, Math.floor(shuffled.length / 5));
-  
-  shuffled.forEach((id, i) => {
-    const player = players.get(id);
-    player.role = i < impostorCount ? 'impostor' : 'crewmate';
-    player.tasks = generateTasks();
-    players.set(id, player);
-  });
-  broadcastPlayers();
+export const assignRoles = async () => {
+  if (supabaseManager) {
+    try {
+      await supabaseManager.assignRoles();
+      await reloadPlayers(); // Reload to get updated roles and tasks
+    } catch (error) {
+      console.error('Error assigning roles via Supabase:', error);
+    }
+  } else {
+    // Fallback to local logic
+    reloadPlayers();
+    const ids = Array.from(players.keys());
+    const shuffled = shuffleArray(ids);
+    const impostorCount = Math.max(1, Math.floor(shuffled.length / 5));
+
+    shuffled.forEach((id, i) => {
+      const player = players.get(id);
+      player.role = i < impostorCount ? 'impostor' : 'crewmate';
+      player.tasks = generateTasks();
+      players.set(id, player);
+    });
+    broadcastPlayers();
+  }
 };
 
 export const getGameState = () => {
