@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useGame } from "../game/gameProvider";
 
 import SpaceBackground from "../components/SpaceBackground";
@@ -67,7 +67,7 @@ export default function HostScreen() {
               value={hostName}
               onChange={(e) => setHostName(e.target.value)}
               className="w-full p-3 mb-4 bg-stone-800 border border-stone-600 rounded text-white placeholder-stone-400"
-              onKeyPress={(e) => e.key === 'Enter' && handleCreateGame()}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreateGame()}
             />
             <button
               className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-semibold disabled:opacity-50"

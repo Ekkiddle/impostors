@@ -13,17 +13,17 @@ export default function Lobby() {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { players, joinGame } = useGame();
+  const { joinGame } = useGame();
 
   useEffect(() => {
     // Check if we already joined a game
-    // const storedGameId = sessionStorage.getItem('gameId');
-    // const storedPlayerId = sessionStorage.getItem('playerId');
+    const storedGameId = sessionStorage.getItem('gameId');
+    const storedPlayerId = sessionStorage.getItem('playerId');
 
-    // if (storedGameId && storedPlayerId) {
-    //   setGameId(storedGameId);
-    //   setJoined(true);
-    // }
+    if (storedGameId && storedPlayerId) {
+      setGameId(storedGameId);
+      setJoined(true);
+    }
   }, []);
 
   const handleJoinClick = async () => {
@@ -32,9 +32,9 @@ export default function Lobby() {
     try {
       setLoading(true);
       setErrorMsg('');
-      const result = await joinGame(gameId.trim(), name.trim());
+      const result = await joinGame(gameId.trim().toUpperCase(), name.trim());
       setJoined(true);
-      sessionStorage.setItem('gameId', result.gameCode);
+      sessionStorage.setItem('gameId', result.gameId);
       sessionStorage.setItem('playerId', result.playerId);
       sessionStorage.setItem('isHost', 'false');
     } catch (error) {
@@ -60,9 +60,9 @@ export default function Lobby() {
                 value={gameId}
                 onChange={(e) => setGameId(e.target.value)}
                 required
-                minLength="6"
-                maxLength="6"
-                size="10"
+                minLength={6}
+                maxLength={6}
+                size={10}
                 className="border-2 rounded-md text-white bg-black px-2"
               />
             </div>
@@ -75,8 +75,8 @@ export default function Lobby() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                maxLength="15"
-                size="10"
+                maxLength={15}
+                size={10}
                 className="border-2 rounded-md text-white bg-black px-2"
               />
             </div>
@@ -103,7 +103,7 @@ export default function Lobby() {
               <p className="text-green-600 text-xl">Players:</p>
             </div>
             <div className="w-full max-h-[60vh] overflow-y-scroll mt-4 scrollbar-hide">
-              <PlayerList />
+              <PlayerList isHost={false} />
             </div>
           </div>
           <p className='text-white text-lg mb-10'>Waiting for host to start the game</p>

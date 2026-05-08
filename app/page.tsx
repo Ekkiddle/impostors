@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
-import { clearPlayers } from './game/gameManager';
 
 import SpaceBackground from './components/SpaceBackground';
 
@@ -19,7 +18,6 @@ export default function Home() {
           aria-label="Host a new game"
           className="bg-black border-2 border-stone-400 text-white px-4 py-2 rounded-lg w-full max-w-64 hover:bg-stone-950 hover:border-white"
           onClick={() => {
-            clearPlayers();
             router.push('/host');
           }}
         >

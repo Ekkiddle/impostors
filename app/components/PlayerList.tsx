@@ -3,7 +3,7 @@ import { useGame } from '../game/gameProvider';
 import SpaceManIcon from './SpaceManIcon';
 import LoadingDots from './LoadingIcon';
 
-export default function PlayerList({ isHost }) {
+export default function PlayerList({ isHost }: { isHost: boolean }) {
   const { players, supabaseManager } = useGame();
 
   if (!players || Object.keys(players).length === 0) {

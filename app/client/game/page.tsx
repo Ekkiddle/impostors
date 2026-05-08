@@ -3,7 +3,7 @@
 "use client"
 
 
-import { useEffect, useState } from "react"
+import React from "react"
 import Button from '@mui/material/Button';
 import { useGame } from '@/app/game/gameProvider';
 
