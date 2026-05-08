@@ -9,7 +9,7 @@ export default function Home() {
   const router = useRouter();
 
   return (
-    <div className={`w-screen h-screen overflow-hidden font-orbitron`}>
+    <div className={`relative w-screen h-screen overflow-hidden font-orbitron`}>
       <SpaceBackground className='-z-10' />
       <div className="p-10 flex flex-col gap-4 w-full h-full justify-center items-center align-center">
         <h1 className="text-white text-5xl">Impostors</h1>
@@ -32,6 +32,13 @@ export default function Home() {
           Join Game
         </button>
       </div>
+      <button
+        aria-label="Join an existing game"
+        className="absolute top-0 left-0 m-2 bg-black border-2 border-stone-400 text-xs text-white px-4 py-2 rounded-lg hover:bg-stone-950 hover:border-white"
+        onClick={() => router.push('/client/tasks')}
+      >
+        Practice Tasks
+      </button>
     </div>
   );
 }

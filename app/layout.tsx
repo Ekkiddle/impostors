@@ -1,14 +1,30 @@
-'use client';
-
-import { useEffect, type ReactNode } from 'react'; // Added React and ReactNode
+import type { ReactNode } from 'react';
 import './globals.css';
-import { DndProvider } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
-import { GameProvider } from './game/gameProvider';
+import { Providers } from './components/Providers';
 import FullscreenButton from './components/FullScreenButton';
-
+import PWAClientLogic from './components/PWAClientLogic';
+import type { Metadata, Viewport } from 'next';
 import { Orbitron } from 'next/font/google';
 import localFont from 'next/font/local';
+
+export const metadata: Metadata = {
+  title: 'Impostors',
+  description: 'A multiplayer game of deception and teamwork in space.',
+  manifest: '/manifest.json', // Crucial for PWA "Add to home screen"
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Impostors',
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#000000',
+};
 
 const digi = localFont({
   src: './fonts/time.ttf',
@@ -22,30 +38,11 @@ const orbitron = Orbitron({
   variable: '--font-orbitron',
 });
 
-// Function to lock the screen orientation
-const lockOrientation = () => {
-  // Use 'as any' for screen.orientation if types are missing, 
-  // or use standard ScreenOrientation types if available.
-  const screenAny = screen as any;
-  if (screenAny.orientation && screenAny.orientation.lock) {
-    screenAny.orientation.lock('portrait').catch((error: Error) => {
-      console.log('Error locking orientation: ', error);
-    });
-  }
-};
-
-interface RootLayoutProps {
-  children: ReactNode;
-}
-
-export default function RootLayout({ children }: RootLayoutProps) {
-  useEffect(() => {
-    lockOrientation();
-  }, []);
-
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${orbitron.variable} ${digi.variable}`}>
       <body className="w-screen h-screen overflow-hidden relative">
+        <PWAClientLogic /> {/* Add the client logic here */}
         <FullscreenButton
           style={{
             position: 'absolute',
@@ -61,11 +58,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
             transition: 'opacity 0.3s ease',
           }}
         />
-        <DndProvider backend={HTML5Backend}>
-          <GameProvider>
-            {children}
-          </GameProvider>
-        </DndProvider>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );
