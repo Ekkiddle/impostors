@@ -30,7 +30,7 @@ export default function AlignEngineTask() {
 
         // Calculate angle in degrees
         const angleRad = Math.atan2(nextPoint.y - prevPoint.y, nextPoint.x - prevPoint.x);
-        const tangentAngle = (angleRad * 180) / Math.PI;
+        const tangentAngle = (angleRad * 180) / Math.PI - 90;
 
         return { x: point.x, y: point.y, tangentAngle };
     };
@@ -96,7 +96,7 @@ export default function AlignEngineTask() {
         setIsDragging(false);
 
         // Snap logic: if close to 0, succeed
-        if (Math.abs(angleRef.current) < 4) {
+        if (Math.abs(angleRef.current) < 2) {
             setAngle(0);
             setSuccess(true);
         }
@@ -106,13 +106,6 @@ export default function AlignEngineTask() {
         const magnitude = 15 + Math.random() * 25;
         const sign = Math.random() < 0.5 ? -1 : 1;
         setAngle(magnitude * sign);
-
-        window.addEventListener("mouseup", handleEnd);
-        window.addEventListener("touchend", handleEnd);
-        return () => {
-            window.removeEventListener("mouseup", handleEnd);
-            window.removeEventListener("touchend", handleEnd);
-        };
     }, []);
 
     useEffect(() => { angleRef.current = angle; }, [angle]);
@@ -121,13 +114,13 @@ export default function AlignEngineTask() {
 
     return (
         <div className="h-full w-full select-none touch-none">
-            <EmbossedDiv className="flex h-full w-full bg-gray-300 p-[6%]">
+            <EmbossedDiv innerDimensions={{ left: 10, right: 90, top: 10, bottom: 90 }} className="flex h-full w-full bg-gray-300 p-[10%]">
                 {/* LEFT PANEL: Alignment Visualizer */}
                 <div className="relative w-[60%] h-full bg-black overflow-hidden border-2 border-gray-400">
-                    <div className="absolute left-0 right-0 top-1/2 h-0.5 border-t border-dotted border-red-900 opacity-50" />
+                    <div className="absolute left-0 right-0 top-1/2 h-0.5 border-t border-dotted border-red-900 opacity-80" />
 
                     <div
-                        className="absolute h-[1px] border-red-500 origin-right border-dashed border-t transition-colors duration-500"
+                        className="absolute h-[1px] origin-right border-dashed border-t transition-colors duration-500"
                         style={{
                             width: "200%",
                             top: "50%",
@@ -150,12 +143,6 @@ export default function AlignEngineTask() {
                     >
                         <div className="mx-[10%] w-[80%] h-full border-x border-dashed border-inherit" />
                     </div>
-
-                    {success && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-green-500/10 pointer-events-none">
-                            <span className="text-green-500 font-bold tracking-tighter opacity-50">LOCKED</span>
-                        </div>
-                    )}
                 </div>
 
                 {/* RIGHT PANEL: The Slider */}
@@ -163,26 +150,28 @@ export default function AlignEngineTask() {
                     <svg
                         ref={svgRef}
                         className="w-full h-full cursor-pointer"
-                        viewBox="0 0 100 100"
+                        viewBox="0 0 50 100"
                         preserveAspectRatio="none"
                         onMouseDown={handleStart}
                         onTouchStart={handleStart}
                         onMouseMove={handleMove}
                         onTouchMove={handleMove}
+                        onMouseUp={handleEnd}
+                        onTouchEnd={handleEnd}
                     >
                         <path
                             ref={pathRef}
-                            d="M 65 15 Q 15 50 65 85"
+                            d="M 35 15 Q 10 50 35 85"
                             fill="none"
                             stroke="#999"
-                            strokeWidth="6"
+                            strokeWidth="3"
                             strokeLinecap="round"
                         />
 
                         {/* The Arrow (Marker) */}
                         <g
                             transform={`translate(${arrowX}, ${arrowY}) rotate(${tangentAngle})`}
-                            className="transition-transform duration-75"
+                            className=""
                         >
                             {/* Collision hitbox circle (invisible) */}
                             <circle r="12" fill="transparent" />
@@ -195,6 +184,6 @@ export default function AlignEngineTask() {
                     </svg>
                 </div>
             </EmbossedDiv>
-        </div>
+        </div >
     );
 }
