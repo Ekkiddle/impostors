@@ -228,7 +228,7 @@ class SupabaseManager {
 
   private generateUniqueColor(): string {
     const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
-    return colors[Math.floor(Math.random() * colors.length)];
+    return colors[Math.floor(Math.random() * colors.length)]!;
   }
 
   private async generateUniqueColorForGame(): Promise<string> {
@@ -236,13 +236,13 @@ class SupabaseManager {
     const usedColors = players.map(p => p.color);
     const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
     const available = colors.filter(c => !usedColors.includes(c));
-    return available.length > 0 ? available[Math.floor(Math.random() * available.length)] : '#FFFFFF';
+    return available.length > 0 ? available[Math.floor(Math.random() * available.length)]! : '#FFFFFF';
   }
 
   private shuffleArray<T>(arr: T[]): T[] {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
+      [arr[i], arr[j]] = [arr[j]!, arr[i]!];
     }
     return arr;
   }

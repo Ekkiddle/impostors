@@ -65,7 +65,7 @@ export default function TaskPage() {
       </div>
 
       {/* 3. Render the dynamic component with a key to force reset on switch */}
-      <div className="max-w-[100vw] w-full aspect-square border-4 border-slate-800 bg-black overflow-hidden rounded-xl shadow-2xl">
+      <div className="max-w-[100vw] w-full aspect-square border-4 border-slate-800 overflow-hidden rounded-xl shadow-2xl">
         {ActiveTaskComponent ? (
           <ActiveTaskComponent key={selectedTaskValue} onSuccess={handleTaskComplete} />
         ) : (

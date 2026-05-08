@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, ReactNode } from 'react'; // Added React and ReactNode
+import { useEffect, type ReactNode } from 'react'; // Added React and ReactNode
 import './globals.css';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';

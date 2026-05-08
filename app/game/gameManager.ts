@@ -1,4 +1,4 @@
-import SupabaseManager, { Player } from './supabaseManager';
+import SupabaseManager, { type Player } from './supabaseManager';
 
 // Define the Map with strict types
 const players = new Map<string, Player>();
@@ -133,7 +133,7 @@ export const shuffleArray = <T>(arr: T[]): T[] => {
   const newArr = [...arr];
   for (let i = newArr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+    [newArr[i], newArr[j]] = [newArr[j]!, newArr[i]!];
   }
   return newArr;
 };

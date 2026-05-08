@@ -200,8 +200,8 @@ export default function DraggableWire({
 
       <div
         ref={originRef}
-        className="absolute z-10 border-2 border-black"
-        style={{ top: 0, left: 0, width: size, height: size, backgroundColor: darkerColor }}
+        className="absolute z-10"
+        style={{ top: 1, left: -3, width: 3, height: size-2, backgroundColor: darkerColor }}
       />
     </div>
   );

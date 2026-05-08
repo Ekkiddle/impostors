@@ -73,13 +73,13 @@ export default function ShieldsTask({ onSuccess }: ShieldsTaskProps) {
                 return updated;
             }
 
-            // Revert this specific hex after 2 seconds if not completed
+            // Revert this specific hex after 1.2 seconds if not completed
             setTimeout(() => {
                 if (isFinishedRef.current) return;
                 setHexagons((curr) =>
                     curr.map((h) => (h.id === id ? { ...h, clicked: false } : h))
                 );
-            }, 2000);
+            }, 1200);
 
             return updated;
         });
@@ -91,7 +91,7 @@ export default function ShieldsTask({ onSuccess }: ShieldsTaskProps) {
             <div className="absolute z-0 left-[6%] top-[9%] h-[90%] bg-gray-600/30 aspect-square rounded-full" />
 
             <div
-                className="relative z-10 overflow-hidden h-[90%] aspect-square rounded-full border-2 border-black bg-[radial-gradient(circle,_#1e3a8a_0%,_#000_150%)] shadow-2xl"
+                className="relative z-10 overflow-hidden h-[90%] aspect-square rounded-full border-2 border-black bg-[radial-gradient(circle,_rgba(96,165,250,1)_0%,_black_150%)] shadow-2xl"
                 ref={containerRef}
             >
                 {/* Grid lines - rendered as one loop for efficiency */}

@@ -78,7 +78,7 @@ export default function AsteroidsTask() {
 
             <AsteroidField
                 onClick={handleAsteroid}
-                spawnRate={500} // Example prop: lower = more frequent spawns
+                spawnRate={1000} // Example prop: lower = more frequent spawns
                 maxActive={15}   // Keep at least 15 on screen at once
             />
 

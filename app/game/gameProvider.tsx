@@ -1,7 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import SupabaseManager, { Player } from './supabaseManager';
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import SupabaseManager, { type Player } from './supabaseManager';
 import { initSupabaseManager } from './gameManager';
 
 interface GameContextType {

@@ -36,7 +36,7 @@ export default function SpaceBackground() {
   }, []);
 
   return (
-    <div className="absolute top-0 left-0 w-full h-full overflow-hidden bg-black">
+    <div className="absolute top-0 left-0 w-full h-full -z-10 overflow-hidden bg-black">
       {stars.map((star) => (
         <div
           key={star.id}

@@ -6,13 +6,10 @@ import DraggableWire from '../DraggableWire';
 import WireTarget from '../WireTarget';
 import { darkenColor } from '../SpaceManIcon';
 
-// Define our wire colors as a constant
 const WIRE_COLORS = ['#0000ff', '#ff0000', '#ffeb04', '#ff00ff'];
 
 export default function WireTask({ onSuccess }: { onSuccess?: () => void }) {
     const [connections, setConnections] = useState<string[]>([]);
-
-    // Track hover states in an object to keep code clean
     const [hoverStates, setHoverStates] = useState<Record<string, boolean>>({
         '#0000ff': false,
         '#ff0000': false,
@@ -20,7 +17,6 @@ export default function WireTask({ onSuccess }: { onSuccess?: () => void }) {
         '#ff00ff': false,
     });
 
-    // Store only the color strings in state, shuffled
     const [shuffledSources, setShuffledSources] = useState<string[]>([]);
     const [shuffledEnds, setShuffledEnds] = useState<string[]>([]);
 
@@ -33,12 +29,10 @@ export default function WireTask({ onSuccess }: { onSuccess?: () => void }) {
     };
 
     const size = 20;
-
     const isConnected = (color: string) => connections.includes(color);
 
     const checkSuccess = useCallback(() => {
         if (connections.length === WIRE_COLORS.length) {
-            console.log("Task Complete");
             if (onSuccess) onSuccess();
         }
     }, [connections, onSuccess]);
@@ -47,7 +41,6 @@ export default function WireTask({ onSuccess }: { onSuccess?: () => void }) {
         checkSuccess();
     }, [connections, checkSuccess]);
 
-    // Shuffle colors on mount
     useEffect(() => {
         setShuffledSources(shuffleArray([...WIRE_COLORS]));
         setShuffledEnds(shuffleArray([...WIRE_COLORS]));
@@ -60,7 +53,8 @@ export default function WireTask({ onSuccess }: { onSuccess?: () => void }) {
     if (shuffledSources.length === 0 || shuffledEnds.length === 0) return null;
 
     return (
-        <div className="flex flex-col relative w-full h-full bg-black font-orbitron">
+        <div className="flex flex-col relative w-full h-full bg-black select-none">
+            {/* Background Image Layer */}
             <div
                 className="absolute inset-0 z-0"
                 style={{
@@ -71,51 +65,104 @@ export default function WireTask({ onSuccess }: { onSuccess?: () => void }) {
                 }}
             />
 
-            {shuffledSources.map((color, index) => {
-                const endColor = shuffledEnds[index]!; // Use ! because we know the length matches
+            {shuffledSources.map((sourceColor, index) => {
+                const endColor = shuffledEnds[index]!;
 
                 return (
-                    <div className='flex flex-row justify-between w-full h-[105%]' key={color}>
+                    <div className="flex flex-row justify-between w-full h-[105%]" key={sourceColor}>
                         {/* Start (Left) Side */}
                         <div className="flex flex-col h-full">
-                            <div className='bg-gray-600 h-full w-16 max-w-[15vw] border-2 border-black z-10'></div>
-                            <div className='bg-yellow-300 h-5 w-14 max-w-[13vw] border-2 border-black z-10'></div>
-                            <div className='flex flex-row w-full' style={{ height: size }}>
-                                <div className='relative w-12 max-w-[11vw] border-2 border-black z-10' style={{ backgroundColor: color, height: size }}>
-                                    <div className="absolute w-full z-20" style={{ top: '-4%', left: 1, height: '110%', backgroundColor: darkenColor(color), pointerEvents: 'none' }} />
+                            <div className="bg-gray-600 h-full w-16 max-w-[15vw] border-2 border-black z-5"></div>
+                            <div className="bg-yellow-300 h-5 w-14 max-w-[13vw] border-2 border-black z-5"></div>
+                            <div className="flex flex-row w-full" style={{ height: size }}>
+                                <div
+                                    className="relative w-full max-w-[11vw] border-2 border-black z-5"
+                                    style={{ backgroundColor: sourceColor, height: size }}
+                                >
+                                    <div
+                                        className="absolute w-full z-7"
+                                        style={{
+                                            top: '-4%',
+                                            left: 0,
+                                            height: '110%',
+                                            backgroundColor: darkenColor(sourceColor),
+                                            pointerEvents: 'none',
+                                        }}
+                                    />
+                                    <div
+                                        className="absolute w-full z-7"
+                                        style={{
+                                            top: '24%',
+                                            left: 0,
+                                            height: '50%',
+                                            backgroundColor: sourceColor,
+                                            pointerEvents: 'none',
+                                        }}
+                                    />
                                 </div>
                                 <DraggableWire
                                     size={size}
-                                    color={color}
-                                    targetRef={targetRefs[color as keyof typeof targetRefs]}
+                                    color={sourceColor}
+                                    targetRef={targetRefs[sourceColor as keyof typeof targetRefs]}
                                     onConnection={() => {
-                                        setConnections(prev => [...prev, color]);
-                                        setHover(color, false);
+                                        setConnections(prev => [...prev, sourceColor]);
+                                        setHover(sourceColor, false);
                                     }}
-                                    onHover={() => setHover(color, true)}
+                                    onHover={() => setHover(sourceColor, true)}
                                 />
                             </div>
                         </div>
 
                         {/* End (Right) Side */}
-                        <div className='flex flex-col items-end h-full'>
-                            <div className='bg-gray-600 h-full w-16 max-w-[15vw] border-2 border-black z-10'></div>
-                            <div className={`h-5 w-14 max-w-[13vw] border-2 border-black z-10 ${isConnected(endColor) ? 'bg-yellow-300' : 'bg-gray-800'}`}></div>
-                            <div className='flex flex-row w-full bg-black' style={{ height: size }}>
+                        <div className="flex flex-col items-end h-full">
+                            <div className="bg-gray-600 h-full w-16 max-w-[15vw] border-2 border-black z-5"></div>
+                            <div
+                                className={`h-5 w-14 max-w-[13vw] border-2 border-black z-5 ${isConnected(endColor) ? 'bg-yellow-300' : 'bg-gray-800'
+                                    }`}
+                            ></div>
+                            <div className="flex flex-row w-full" style={{ height: size }}>
                                 <WireTarget
                                     size={size}
                                     color={endColor}
                                     ref={targetRefs[endColor as keyof typeof targetRefs]}
-                                    isHovering={hoverStates[endColor]}
+                                    isHovering={hoverStates[endColor] ?? false}
                                 />
-                                <div className='relative w-12 max-w-[11vw] border-2 border-black z-10' style={{ backgroundColor: endColor, height: size }}>
-                                    <div className="absolute w-full z-20" style={{ top: '-4%', left: 1, height: '110%', backgroundColor: darkenColor(endColor), pointerEvents: 'none' }} />
+                                <div
+                                    className="relative w-12 max-w-[11vw] border-2 border-black z-5"
+                                    style={{ backgroundColor: endColor, height: size }}
+                                >
+                                    <div
+                                        className="absolute w-full z-7"
+                                        style={{
+                                            top: '-4%',
+                                            left: 1,
+                                            height: '110%',
+                                            backgroundColor: darkenColor(endColor),
+                                            pointerEvents: 'none',
+                                        }}
+                                    />
+                                    <div
+                                        className="absolute w-full z-7"
+                                        style={{
+                                            top: '23%',
+                                            left: 1,
+                                            height: '55%',
+                                            backgroundColor: endColor,
+                                            pointerEvents: 'none',
+                                        }}
+                                    />
                                 </div>
                             </div>
                         </div>
                     </div>
                 );
             })}
+
+            {/* Bottom Footer Panels */}
+            <div className="flex flex-row h-full justify-between w-full z-5 text-white">
+                <div className="bg-gray-600 w-16 max-w-[15vw] border-2 border-black"></div>
+                <div className="bg-gray-600 w-16 max-w-[15vw] border-2 border-black"></div>
+            </div>
         </div>
     );
 }

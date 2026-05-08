@@ -1,15 +1,9 @@
-// Page that covers the game running of the client. If the user is not already connected to a game, ("No host, no connections...")
-// Then, they will be redirected back to the client page.
-"use client"
-
+'use client';
 
 import React from "react"
 import Button from '@mui/material/Button';
-import { useGame } from '@/app/game/gameProvider';
 
 export default function GamePage() {
-    const { players } = useGame();
-
     return (
         <div className="w-full h-full bg-sky-800 flex flex-col items-center p-2 pt-12 md:p-2">
             <div className="w-100 max-w-full h-full flex flex-col items-center gap-4">

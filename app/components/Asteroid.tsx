@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface AsteroidData {
@@ -8,9 +8,7 @@ interface AsteroidData {
   svg: string;
   size: number;
   speed: number;
-  rotationSpeed: number;
   top: string;
-  delay: number;
   spawnOnScreen: boolean;
 }
 
@@ -22,19 +20,16 @@ const asteroidSvgs = [
 ];
 
 function getRandomAsteroid(spawnOnScreen = false): AsteroidData {
-  const size = Math.random() * 20 + 30;
-  const speed = Math.random() * 8 + 6;
-  const rotationSpeed = (Math.random() - 0.5) * 100;
-  const top = `${Math.random() * 85 + 5}%`;
+  const size = Math.random() * 20 + 25;
+  const speed = Math.random() * 5 + 5; // Balanced for standard visibility
+  const top = `${Math.random() * 80 + 10}%`;
 
   return {
     id: Math.random().toString(36).substring(2, 9),
     svg: asteroidSvgs[Math.floor(Math.random() * asteroidSvgs.length)]!,
     size,
     speed,
-    rotationSpeed,
     top,
-    delay: 0,
     spawnOnScreen,
   };
 }
@@ -58,28 +53,28 @@ function Asteroid({ data, onExplode, onMiss }: AsteroidProps) {
         onExplode(data.id);
       }}
       initial={{
-        x: data.spawnOnScreen ? `${Math.random() * 80 + 10}vw` : '-15vw',
+        x: data.spawnOnScreen ? `${Math.random() * 70 + 10}vw` : '-20vw',
         rotate: 0,
-        opacity: 0,
+        opacity: 1,
+        scale: 1
       }}
       animate={{
         x: '115vw',
         rotate: 360,
-        opacity: 1,
       }}
       exit={{
         scale: exploded ? 2.5 : 1,
         opacity: 0,
-        filter: exploded ? "brightness(2) blur(4px)" : "none"
+        filter: exploded ? "brightness(2) blur(8px)" : "none",
+        transition: { duration: 0.3 }
       }}
       transition={{
         x: { duration: data.speed, ease: 'linear' },
-        rotate: { duration: data.speed * 2, ease: 'linear', repeat: Infinity },
-        opacity: { duration: 0.3 }
+        rotate: { duration: data.speed * 1.5, ease: 'linear', repeat: Infinity },
       }}
-      onAnimationComplete={(definition) => {
-        // definition check for Framer Motion completion
-        if (typeof definition === 'object' && 'x' in definition && definition.x === '115vw') {
+      onUpdate={(latest) => {
+        // Fallback cleanup if it goes off screen without triggering completion
+        if (typeof latest.x === 'string' && parseFloat(latest.x) >= 110) {
           onMiss(data.id);
         }
       }}
@@ -90,6 +85,7 @@ function Asteroid({ data, onExplode, onMiss }: AsteroidProps) {
         height: `${data.size}px`,
         cursor: 'crosshair',
         pointerEvents: exploded ? 'none' : 'auto',
+        zIndex: exploded ? 50 : 10,
       }}
     />
   );
@@ -103,47 +99,46 @@ interface AsteroidFieldProps {
 
 export default function AsteroidField({
   onClick,
-  spawnRate = 800,
-  maxActive = 20
+  spawnRate = 1200,
+  maxActive = 15
 }: AsteroidFieldProps) {
   const [asteroids, setAsteroids] = useState<AsteroidData[]>([]);
 
-  // Initial populate & Interval Management
-  useEffect(() => {
-    // Initial burst on component mount
-    const initial = Array.from({ length: 6 }, () => getRandomAsteroid(true));
-    setAsteroids(initial);
+  // Memoized handlers to prevent unnecessary re-renders of the Asteroid children
+  const removeAsteroid = useCallback((id: string) => {
+    setAsteroids(prev => prev.filter(a => a.id !== id));
+  }, []);
 
+  const handleExplode = useCallback((id: string) => {
+    if (onClick) onClick();
+    // Delay removal slightly to allow exit animation to begin
+    setTimeout(() => removeAsteroid(id), 50);
+  }, [onClick, removeAsteroid]);
+
+  useEffect(() => {
+    // 1. Initial population (instant)
+    setAsteroids(Array.from({ length: 5 }, () => getRandomAsteroid(true)));
+
+    // 2. Fixed interval spawning
     const spawnInterval = setInterval(() => {
       setAsteroids((prev) => {
-        // Enforce the maxActive constraint
         if (prev.length >= maxActive) return prev;
         return [...prev, getRandomAsteroid(false)];
       });
     }, spawnRate);
 
     return () => clearInterval(spawnInterval);
-  }, [spawnRate, maxActive]); // Dependency array ensures interval updates if props change
-
-  const handleExplode = (id: string) => {
-    if (onClick) onClick();
-    // Filter out the specific asteroid immediately
-    setAsteroids(prev => prev.filter(a => a.id !== id));
-  };
-
-  const handleMiss = (id: string) => {
-    setAsteroids(prev => prev.filter(a => a.id !== id));
-  };
+  }, [spawnRate, maxActive]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden pointer-events-auto">
+    <div className="relative w-full h-full overflow-hidden pointer-events-auto bg-transparent">
       <AnimatePresence mode="popLayout">
         {asteroids.map((asteroid) => (
           <Asteroid
             key={asteroid.id}
             data={asteroid}
             onExplode={handleExplode}
-            onMiss={handleMiss}
+            onMiss={removeAsteroid}
           />
         ))}
       </AnimatePresence>
