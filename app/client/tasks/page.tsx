@@ -10,10 +10,13 @@ import NavigateTask from '@/app/components/tasks/NavigateTask';
 import SteeringTask from '@/app/components/tasks/SteeringTask';
 import ShieldsTask from '@/app/components/tasks/ShieldsTask';
 import AlignEngineTask from '@/app/components/tasks/AlignEngineTask';
+import FuelEnginesTask from '@/app/components/tasks/FuelEnginesTask';
 
 const taskList = [
   { value: 'Wire', label: 'Wire Task', Component: WireTask },
   { value: 'Card', label: 'Swipe Card', Component: CardTask },
+  { value: 'CollectFuel', label: 'Collect Fuel', Component: FuelEnginesTask, extraProps: { stage: "COLLECT" } },
+  { value: 'DepositFuel', label: 'Deposit Fuel', Component: FuelEnginesTask, extraProps: { stage: "DEPOSIT" } },
   { value: 'Asteroids', label: 'Asteroids', Component: AsteroidsTask },
   { value: 'Reactor', label: 'Reactor Sequence', Component: SequenceTask },
   { value: 'Navigate', label: 'Navigation', Component: NavigateTask },
@@ -68,7 +71,7 @@ export default function TaskPage() {
       {/* Task Viewport */}
       <div className="max-w-[100vw] w-full aspect-square border-4 border-blue-500/30 overflow-hidden rounded-xl shadow-[0_0_30px_rgba(0,0,0,0.5)] ">
         {ActiveTaskComponent ? (
-          <ActiveTaskComponent key={selectedTaskValue} onSuccess={handleTaskComplete} />
+          <ActiveTaskComponent key={selectedTaskValue} onSuccess={handleTaskComplete} {...taskData?.extraProps ?? {}} />
         ) : (
           <div className="text-white flex items-center justify-center h-full">Select a task</div>
         )}
