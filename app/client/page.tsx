@@ -48,7 +48,7 @@ export default function Lobby() {
   if (!joined) {
     return (
       <div className="w-screen h-screen overflow-hidden font-orbitron">
-        <SpaceBackground />
+        <SpaceBackground className='-z-10' />
         <div className='w-full h-full flex flex-col justify-center items-center gap-y-4 p-10'>
           <div className="flex flex-col items-end gap-y-2">
             <div className="flex flex-row items-center gap-x-2">
@@ -96,7 +96,7 @@ export default function Lobby() {
   } else {
     return (
       <div className="w-screen h-screen overflow-hidden font-orbitron">
-        <SpaceBackground />
+        <SpaceBackground className='-z-10' />
         <div className='w-full h-full flex flex-col items-center justify-between p-10'>
           <div className='w-full flex flex-col items-center'>
             <div className="w-full mt-4 items-center flex flex-col">

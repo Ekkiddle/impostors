@@ -57,7 +57,7 @@ export default function HostScreen() {
   if (!gameCreated) {
     return (
       <div className="w-screen h-screen overflow-hidden font-orbitron">
-        <SpaceBackground />
+        <SpaceBackground className="-z-10" />
         <div className="w-full h-full flex flex-col items-center justify-center p-10">
           <div className="bg-black/80 border border-stone-400 rounded-lg p-8 max-w-md w-full">
             <h1 className="text-white text-2xl mb-6 text-center">Create Game</h1>
@@ -84,7 +84,7 @@ export default function HostScreen() {
 
   return (
     <div className="w-screen h-screen overflow-hidden font-orbitron">
-      <SpaceBackground />
+      <SpaceBackground className="-z-10" />
       <div className="w-full h-full flex flex-col items-center justify-between p-10">
         <div className="w-full flex flex-col items-center flex-grow">
           <div className="w-full mt-4 items-center flex flex-col">

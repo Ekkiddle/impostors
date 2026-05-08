@@ -155,17 +155,21 @@ export default function DraggableWire({
 
     const calculatePoints = (w: number, off: number) => {
       const halfThick = w / 2;
-      const p1 = { x: origin.x + off, y: origin.y + halfThick };
-      const p2 = { x: origin.x + off, y: origin.y - halfThick };
-      const p3 = {
+      const topAdd = Math.min(Math.max(Math.tan(-angle/2),0)*halfThick, halfThick)
+      const bottomAdd = Math.min(Math.max(Math.tan(angle/2),0)*halfThick, halfThick)
+      const p1 = { x: origin.x + off + topAdd, y: origin.y + halfThick };
+      const p2 = { x: origin.x + off, y: origin.y + halfThick };
+      const p3 = { x: origin.x + off, y: origin.y - halfThick };
+      const p4 = { x: origin.x + off + bottomAdd, y: origin.y - halfThick };
+      const p5 = {
         x: end.x + halfThick * Math.sin(angle),
         y: end.y - halfThick * Math.cos(angle),
       };
-      const p4 = {
+      const p6 = {
         x: end.x - halfThick * Math.sin(angle),
         y: end.y + halfThick * Math.cos(angle),
       };
-      return `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}`;
+      return `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y} ${p5.x},${p5.y} ${p6.x}, ${p6.y}`;
     };
 
     return (
@@ -201,7 +205,7 @@ export default function DraggableWire({
       <div
         ref={originRef}
         className="absolute z-10"
-        style={{ top: 1, left: -3, width: 3, height: size-2, backgroundColor: darkerColor }}
+        style={{ top: 1, left: -3, width: 3, height: size - 2, backgroundColor: darkerColor }}
       />
     </div>
   );

@@ -11,7 +11,7 @@ interface Star {
   delay: number;
 }
 
-export default function SpaceBackground() {
+export default function SpaceBackground({ className }: { className?: string }) {
   const [stars, setStars] = useState<Star[]>([]);
 
   useEffect(() => {
@@ -36,7 +36,7 @@ export default function SpaceBackground() {
   }, []);
 
   return (
-    <div className="absolute top-0 left-0 w-full h-full -z-10 overflow-hidden bg-black">
+    <div className={`absolute top-0 left-0 w-full h-full overflow-hidden bg-black ${className}`}>
       {stars.map((star) => (
         <div
           key={star.id}
