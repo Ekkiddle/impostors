@@ -1,14 +1,3 @@
-import { createClient, RealtimeChannel } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-// if (!supabaseUrl || !supabaseAnonKey) {
-//   throw new Error('Missing Supabase environment variables');
-// }
-
-export const supabase = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null;
-
 // --- Interfaces ---
 
 export interface Player {
@@ -35,6 +24,12 @@ interface GameResult {
   playerId: string;
 }
 
+// --- In-Memory State & Event Bus ---
+
+const gamesStore = new Map<string, Game>();
+const playersStore = new Map<string, Player>();
+const eventBus = new EventTarget();
+
 // --- Class Implementation ---
 
 class SupabaseManager {
@@ -42,17 +37,29 @@ class SupabaseManager {
   public gameCode: string | null = null;
   public playerId: string | null = null;
   public isHost: boolean = false;
-  private subscriptions: RealtimeChannel[] = [];
 
   private onPlayersUpdate?: (payload: any) => void;
   private onGameUpdate?: (payload: any) => void;
+
+  private handlePlayersEvent = (e: Event) => {
+    const customEvent = e as CustomEvent;
+    if (customEvent.detail?.gameId === this.gameId && this.onPlayersUpdate) {
+      this.onPlayersUpdate(customEvent.detail);
+    }
+  };
+
+  private handleGameEvent = (e: Event) => {
+    const customEvent = e as CustomEvent;
+    if (customEvent.detail?.gameId === this.gameId && this.onGameUpdate) {
+      this.onGameUpdate(customEvent.detail);
+    }
+  };
 
   constructor() {
     this.gameId = null;
     this.gameCode = null;
     this.playerId = null;
     this.isHost = false;
-    this.subscriptions = [];
   }
 
   generateGameCode(): string {
@@ -65,163 +72,152 @@ class SupabaseManager {
   }
 
   async createGame(hostName: string): Promise<GameResult> {
-    const MAX_RETRIES = 5;
-    let attempt = 0;
+    const gameId = 'game_' + Math.random().toString(36).substring(2, 9);
+    const gameCode = this.generateGameCode();
 
-    while (attempt < MAX_RETRIES) {
-      try {
-        const gameCode = this.generateGameCode();
+    const game: Game = {
+      id: gameId,
+      code: gameCode,
+      status: 'waiting',
+      host_id: null,
+    };
+    gamesStore.set(gameId, game);
 
-        const { data: game, error: gameError } = await supabase
-          .from('games')
-          .insert([{ code: gameCode, status: 'waiting' }])
-          .select()
-          .single();
+    this.gameId = gameId;
+    this.gameCode = gameCode;
+    this.isHost = true;
 
-        if (gameError && gameError.code === '23505') {
-          attempt++;
-          continue;
-        }
-        if (gameError) throw gameError;
+    const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
+    const player: Player = {
+      id: playerId,
+      game_id: this.gameId,
+      name: hostName,
+      color: this.generateUniqueColor(),
+      connected: true,
+      alive: true,
+      role: 'pending',
+      tasks: [],
+    };
 
-        this.gameId = game.id;
-        this.gameCode = gameCode;
-        this.isHost = true;
+    playersStore.set(playerId, player);
+    this.playerId = playerId;
 
-        const { data: player, error: playerError } = await supabase
-          .from('players')
-          .insert([{
-            game_id: this.gameId,
-            name: hostName,
-            color: this.generateUniqueColor(),
-            connected: true,
-            alive: true,
-            role: 'pending',
-            tasks: []
-          }])
-          .select()
-          .single();
+    // Set host on the game
+    game.host_id = this.playerId;
+    gamesStore.set(gameId, game);
 
-        if (playerError) throw playerError;
+    this.setupSubscriptions();
 
-        this.playerId = player.id;
-
-        const { error: updateError } = await supabase
-          .from('games')
-          .update({ host_id: this.playerId })
-          .eq('id', this.gameId);
-
-        if (updateError) throw updateError;
-
-        this.setupSubscriptions();
-
-        return {
-          gameId: this.gameId!,
-          gameCode: this.gameCode!,
-          playerId: this.playerId!
-        };
-
-      } catch (error) {
-        console.error(`Attempt ${attempt} failed:`, error);
-        if (attempt >= MAX_RETRIES - 1) throw new Error("Could not generate a unique game code.");
-        attempt++;
-      }
-    }
-    throw new Error("Game creation failed after retries.");
+    return {
+      gameId: this.gameId,
+      gameCode: this.gameCode,
+      playerId: this.playerId,
+    };
   }
 
   async joinGame(gameCode: string, playerName: string): Promise<GameResult> {
-    const { data: game, error: gameError } = await supabase
-      .from('games')
-      .select('*')
-      .eq('code', gameCode)
-      .eq('status', 'waiting')
-      .single();
+    const game = Array.from(gamesStore.values()).find(
+      (g) => g.code === gameCode && g.status === 'waiting'
+    );
 
-    if (gameError || !game) throw new Error('Game not found or not accepting players');
+    if (!game) throw new Error('Game not found or not accepting players');
 
     this.gameId = game.id;
     this.gameCode = gameCode;
     this.isHost = false;
 
-    const { data: player, error: playerError } = await supabase
-      .from('players')
-      .insert([{
-        game_id: this.gameId,
-        name: playerName,
-        color: await this.generateUniqueColorForGame(),
-        connected: true,
-        alive: true,
-        role: 'pending',
-        tasks: []
-      }])
-      .select()
-      .single();
+    const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
+    const player: Player = {
+      id: this.gameId,
+      game_id: this.gameId,
+      name: playerName,
+      color: await this.generateUniqueColorForGame(),
+      connected: true,
+      alive: true,
+      role: 'pending',
+      tasks: [],
+    };
 
-    if (playerError) throw playerError;
+    playersStore.set(playerId, player);
+    this.playerId = playerId;
 
-    this.playerId = player.id;
     this.setupSubscriptions();
+    this.notifyPlayersUpdate('INSERT', player);
 
-    return { gameId: this.gameId!, gameCode: this.gameCode!, playerId: this.playerId! };
+    return {
+      gameId: this.gameId,
+      gameCode: this.gameCode,
+      playerId: this.playerId,
+    };
   }
 
   setupSubscriptions(): void {
     if (!this.gameId) return;
 
-    const playersSub = supabase
-      .channel(`players_${this.gameId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `game_id=eq.${this.gameId}` },
-        (payload) => this.onPlayersUpdate?.(payload)
-      )
-      .subscribe();
-
-    const gamesSub = supabase
-      .channel(`game_${this.gameId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${this.gameId}` },
-        (payload) => this.onGameUpdate?.(payload)
-      )
-      .subscribe();
-
-    this.subscriptions.push(playersSub, gamesSub);
+    eventBus.addEventListener('players_update', this.handlePlayersEvent);
+    eventBus.addEventListener('game_update', this.handleGameEvent);
   }
 
   async updatePlayer(updates: Partial<Player>): Promise<void> {
     if (!this.playerId) return;
-    const { error } = await supabase.from('players').update(updates).eq('id', this.playerId);
-    if (error) throw error;
+    const player = playersStore.get(this.playerId);
+    if (!player) return;
+
+    const updatedPlayer = { ...player, ...updates };
+    playersStore.set(this.playerId, updatedPlayer);
+
+    this.notifyPlayersUpdate('UPDATE', updatedPlayer);
   }
 
   async removePlayer(playerId: string): Promise<void> {
-    const { error } = await supabase.from('players').delete().eq('id', playerId);
-    if (error) throw error;
+    const player = playersStore.get(playerId);
+    if (player) {
+      playersStore.delete(playerId);
+      this.notifyPlayersUpdate('DELETE', player);
+    }
   }
 
   async getPlayers(): Promise<Player[]> {
-    const { data, error } = await supabase.from('players').select('*').eq('game_id', this.gameId);
-    if (error) throw error;
-    return data || [];
+    if (!this.gameId) return [];
+    return Array.from(playersStore.values()).filter(
+      (p) => p.game_id === this.gameId
+    );
   }
 
   async assignRoles(): Promise<void> {
     if (!this.isHost || !this.gameId) return;
 
     const players = await this.getPlayers();
-    const ids = players.map(p => p.id);
+    const ids = players.map((p) => p.id);
     const shuffled = this.shuffleArray([...ids]);
     const impostorCount = Math.max(1, Math.floor(shuffled.length / 5));
 
     for (let i = 0; i < shuffled.length; i++) {
       const role = i < impostorCount ? 'impostor' : 'crewmate';
       const tasks = i >= impostorCount ? this.generateTasks() : [];
-      await supabase.from('players').update({ role, tasks }).eq('id', shuffled[i]);
+      const p = playersStore.get(shuffled[i]??"");
+      if (p) {
+        const updated = { ...p, role, tasks };
+        playersStore.set(shuffled[i]??"", updated as Player);
+        this.notifyPlayersUpdate('UPDATE', updated);
+      }
     }
 
-    await supabase.from('games').update({ status: 'started' }).eq('id', this.gameId);
+    const game = gamesStore.get(this.gameId);
+    if (game) {
+      game.status = 'started';
+      gamesStore.set(this.gameId, game);
+      this.notifyGameUpdate('UPDATE', game);
+    }
   }
 
   async setPlayerAlive(playerId: string, alive: boolean): Promise<void> {
-    await supabase.from('players').update({ alive }).eq('id', playerId);
+    const player = playersStore.get(playerId);
+    if (player) {
+      const updated = { ...player, alive };
+      playersStore.set(playerId, updated);
+      this.notifyPlayersUpdate('UPDATE', updated);
+    }
   }
 
   // --- Utilities ---
@@ -233,10 +229,12 @@ class SupabaseManager {
 
   private async generateUniqueColorForGame(): Promise<string> {
     const players = await this.getPlayers();
-    const usedColors = players.map(p => p.color);
+    const usedColors = players.map((p) => p.color);
     const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
-    const available = colors.filter(c => !usedColors.includes(c));
-    return available.length > 0 ? available[Math.floor(Math.random() * available.length)]! : '#FFFFFF';
+    const available = colors.filter((c) => !usedColors.includes(c));
+    return available.length > 0
+      ? available[Math.floor(Math.random() * available.length)]!
+      : '#FFFFFF';
   }
 
   private shuffleArray<T>(arr: T[]): T[] {
@@ -252,12 +250,33 @@ class SupabaseManager {
     return this.shuffleArray([...pool]).slice(0, 3);
   }
 
-  setOnPlayersUpdate(callback: (payload: any) => void): void { this.onPlayersUpdate = callback; }
-  setOnGameUpdate(callback: (payload: any) => void): void { this.onGameUpdate = callback; }
+  private notifyPlayersUpdate(eventType: string, record: any) {
+    eventBus.dispatchEvent(
+      new CustomEvent('players_update', {
+        detail: { gameId: this.gameId, eventType, new: record },
+      })
+    );
+  }
+
+  private notifyGameUpdate(eventType: string, record: any) {
+    eventBus.dispatchEvent(
+      new CustomEvent('game_update', {
+        detail: { gameId: this.gameId, eventType, new: record },
+      })
+    );
+  }
+
+  setOnPlayersUpdate(callback: (payload: any) => void): void {
+    this.onPlayersUpdate = callback;
+  }
+
+  setOnGameUpdate(callback: (payload: any) => void): void {
+    this.onGameUpdate = callback;
+  }
 
   disconnect(): void {
-    this.subscriptions.forEach(sub => supabase.removeChannel(sub));
-    this.subscriptions = [];
+    eventBus.removeEventListener('players_update', this.handlePlayersEvent);
+    eventBus.removeEventListener('game_update', this.handleGameEvent);
   }
 }
 
