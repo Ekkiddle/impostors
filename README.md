@@ -1,10 +1,18 @@
 # Impostors
 This project was inspired by AmongUs, but I wanted to be able to play a game like that in person, with my friends. So, I am using a web-based React front end framework that will be hosted online, in conjunction with a supabase database for storing game state and information. This is a migration from the previous P2P architecture, since a real-time database is more reliable and scalable in the real world.
 
-## Running the build
-Do it as you would any other react project
+## Running the app
+
+For local development, run:
 
 ```bash
+npm run dev
+```
+
+For production, build the app first and then start the production server:
+
+```bash
+npm run build
 npm run start
 ```
 
