@@ -8,69 +8,97 @@ interface QRScannerProps {
   onError: (errorMessage: string | Error) => void;
 }
 
+let scannerLifecycle: Promise<void> = Promise.resolve();
+
 export default function QRScanner({ onScan, onError }: QRScannerProps) {
   const [result, setResult] = useState<string>('');
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
-  const [cameraId, setCameraId] = useState<string | null>(null);
+  const callbacksRef = useRef({ onScan, onError });
 
   useEffect(() => {
-    if (!cameraId) return;
+    callbacksRef.current = { onScan, onError };
+  }, [onScan, onError]);
 
-    // Initialize the instance if it doesn't exist
-    if (!html5QrCodeRef.current) {
-      html5QrCodeRef.current = new Html5Qrcode("reader", false);
-    }
+  useEffect(() => {
+    let disposed = false;
+    let targetCameraId: string = "";
+    let scanner: Html5Qrcode | null = null;
 
-    const scanner = html5QrCodeRef.current;
+    const startPromise = scannerLifecycle.then(async () => {
+      if (disposed) return;
 
-    scanner.start(
-      cameraId,
-      {
-        fps: 10,
-        qrbox: { width: 250, height: 250 }
-      },
-      (decodedText, decodedResult) => {
-        setResult(decodedText);
-        if (onScan) onScan(decodedText, decodedResult);
-      },
-      (errorMessage) => {
-        // html5-qrcode calls this on every frame it doesn't find a code
-        // so we usually don't want to spam the onError prop here
+      scanner = new Html5Qrcode("reader", false);
+      html5QrCodeRef.current = scanner;
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        console.log(devices);
+        console.log("I am here");
+        if (devices && devices.length > 0) {
+          const backCameras = devices.filter((d) =>
+          (d.label.toLowerCase().includes('back') ||
+            d.label.toLowerCase().includes('rear') ||
+            d.label.toLowerCase().includes('environment')));
+
+          const mainCamera = backCameras.find((d) =>
+            d.label.toLowerCase().includes('camera 0')
+          );
+
+          if (mainCamera) {
+            targetCameraId = mainCamera.id;
+          } else {
+            const backupCamera = backCameras.find((d) =>
+              !d.label.toLowerCase().includes('0.5') &&
+              !d.label.toLowerCase().includes('ultra') &&
+              !d.label.toLowerCase().includes('wide') &&
+              !d.label.toLowerCase().includes('macro')
+            );
+            targetCameraId = backupCamera?.id || devices[0]?.id || "";
+          }
+        }
+        await scanner.start(
+          targetCameraId,
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1,
+          },
+          (decodedText, decodedResult) => {
+            if (disposed) return;
+            setResult(decodedText);
+            callbacksRef.current.onScan(decodedText, decodedResult);
+          },
+          () => {
+            // html5-qrcode calls this on every frame without a detected code.
+          }
+        );
+      } catch (error) {
+        if (!disposed) {
+          console.error('Failed to start scanner', error);
+          callbacksRef.current.onError(error instanceof Error ? error : String(error));
+        }
       }
-    ).catch(err => {
-      console.error("Failed to start scanner", err);
-      if (onError) onError(err);
     });
+    scannerLifecycle = startPromise;
 
     return () => {
-      // Hardware cleanup: ensure the camera is released
-      if (scanner && scanner.isScanning) {
-        scanner.stop()
-          .then(() => scanner.clear())
-          .catch((err) => console.warn("Cleanup error", err));
-      }
+      disposed = true;
+      scannerLifecycle = startPromise.then(async () => {
+        console.log("Stopping scanner");
+        if (!scanner) return;
+        try {
+          if (scanner.isScanning) await scanner.stop();
+        } catch (error) {
+          console.warn('Scanner stop error', error);
+        }
+        try {
+          scanner.clear();
+        } catch (error) {
+          console.warn('Scanner cleanup error', error);
+        }
+        if (html5QrCodeRef.current === scanner) html5QrCodeRef.current = null;
+      });
     };
-  }, [cameraId, onScan, onError]);
-
-  useEffect(() => {
-    Html5Qrcode.getCameras().then(devices => {
-      if (devices && devices.length) {
-        const preferredCamera = devices.find(device =>
-          /back|rear|environment/i.test(device.label) &&
-          !/0\.5|ultra|wide/i.test(device.label)
-        );
-
-        const backCamera = preferredCamera ||
-          devices.find(device => /back|rear|environment/i.test(device.label)) ||
-          devices[0];
-
-        if (backCamera) setCameraId(backCamera.id);
-      }
-    }).catch(err => {
-      console.error("Camera access error:", err);
-      if (onError) onError(err);
-    });
-  }, [onError]);
+  }, []);
 
   return (
     <div className="relative w-full h-full">
