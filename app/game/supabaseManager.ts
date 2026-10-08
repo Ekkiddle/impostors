@@ -9,6 +9,7 @@ export interface Player {
   alive: boolean;
   role: 'pending' | 'impostor' | 'crewmate';
   tasks: string[];
+  created_at: string;
 }
 
 export interface Game {
@@ -46,9 +47,12 @@ class SupabaseManager {
   public gameId: string | null = null;
   public gameCode: string | null = null;
   public playerId: string | null = null;
+  public hostId: string | null = null;
   public isHost = false;
 
   private readonly client: SupabaseClient;
+  private readonly supabaseUrl: string;
+  private readonly publishableKey: string;
   private channel: RealtimeChannel | null = null;
   private onPlayersUpdate?: () => void;
   private onGameUpdate?: (game: Game) => void;
@@ -63,6 +67,8 @@ class SupabaseManager {
       );
     }
 
+    this.supabaseUrl = url;
+    this.publishableKey = publishableKey;
     this.client = createClient(url, publishableKey);
   }
 
@@ -99,7 +105,8 @@ class SupabaseManager {
 
     this.gameId = game.id;
     this.gameCode = game.code;
-    this.isHost = true;
+    this.hostId = null;
+    this.isHost = false;
 
     const { data: player, error: playerError } = await this.client
       .from('players')
@@ -132,9 +139,21 @@ class SupabaseManager {
     }
 
     this.playerId = player.id;
+    this.hostId = player.id;
+    this.isHost = true;
     this.setupSubscriptions();
 
     return { gameId: game.id, gameCode: game.code, playerId: player.id };
+  }
+
+  async deleteGame(gameId: string): Promise<void> {
+    const { error } = await this.client
+      .from('games')
+      .delete()
+      .eq('id', gameId);
+    if (error) {
+      throw new Error(`Could not delete game: ${formatSupabaseError(error)}`);
+    }
   }
 
   async joinGame(gameCode: string, playerName: string): Promise<GameResult> {
@@ -182,7 +201,8 @@ class SupabaseManager {
     this.gameId = game.id;
     this.gameCode = game.code;
     this.playerId = player.id;
-    this.isHost = false;
+    this.hostId = game.host_id;
+    this.isHost = game.host_id === player.id;
     this.setupSubscriptions();
 
     return { gameId: game.id, gameCode: game.code, playerId: player.id };
@@ -220,8 +240,13 @@ class SupabaseManager {
     this.gameId = game.id;
     this.gameCode = game.code;
     this.playerId = player.id;
-    this.isHost = game.host_id === player.id;
+    this.updateCurrentGame(game);
     this.setupSubscriptions();
+  }
+
+  private updateCurrentGame(game: Game): void {
+    this.hostId = game.host_id;
+    this.isHost = game.host_id === this.playerId;
     this.onGameUpdate?.(game);
   }
 
@@ -239,18 +264,39 @@ class SupabaseManager {
       .channel(`game:${gameId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'players', filter: `game_id=eq.${gameId}` },
+        { event: 'INSERT', schema: 'public', table: 'players', filter: `game_id=eq.${gameId}` },
         () => this.onPlayersUpdate?.()
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'players_tasks', filter: `game_id=eq.${gameId}` },
+        { event: 'UPDATE', schema: 'public', table: 'players', filter: `game_id=eq.${gameId}` },
+        () => this.onPlayersUpdate?.()
+      )
+      // Realtime does not support filters on DELETE events; refreshPlayers queries only this game.
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'players' },
+        () => this.onPlayersUpdate?.()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'players_tasks', filter: `game_id=eq.${gameId}` },
+        () => this.onPlayersUpdate?.()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'players_tasks', filter: `game_id=eq.${gameId}` },
+        () => this.onPlayersUpdate?.()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'players_tasks' },
         () => this.onPlayersUpdate?.()
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
-        (payload) => this.onGameUpdate?.(payload.new as Game)
+        (payload) => this.updateCurrentGame(payload.new as Game)
       )
       .subscribe((status, error) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -280,10 +326,34 @@ class SupabaseManager {
   }
 
   async removePlayer(playerId: string): Promise<void> {
-    const { error } = await this.client.from('players').delete().eq('id', playerId);
+    await this.removePlayerAndPromote(playerId);
+  }
+
+  async leaveGame(): Promise<void> {
+    if (!this.playerId) return;
+
+    const playerId = this.playerId;
+    await this.removePlayerAndPromote(playerId);
+    this.clearCurrentSession(playerId);
+  }
+
+  private async removePlayerAndPromote(playerId: string): Promise<void> {
+    const { error } = await this.client.rpc('leave_game_and_promote', {
+      p_player_id: playerId,
+    });
     if (error) {
-      throw new Error(`Could not remove player: ${error.message}`);
+      throw new Error(`Could not remove player: ${formatSupabaseError(error)}`);
     }
+  }
+
+  private clearCurrentSession(playerId: string): void {
+    if (this.playerId !== playerId) return;
+    this.disconnect();
+    this.gameId = null;
+    this.gameCode = null;
+    this.playerId = null;
+    this.hostId = null;
+    this.isHost = false;
   }
 
   async getPlayers(): Promise<Player[]> {
@@ -291,7 +361,7 @@ class SupabaseManager {
 
     const { data: playerRows, error: playersError } = await this.client
       .from('players')
-      .select('id, game_id, name, color, connected, alive, role')
+      .select('id, game_id, name, color, connected, alive, role, created_at')
       .eq('game_id', this.gameId);
 
     if (playersError) {
@@ -340,9 +410,18 @@ class SupabaseManager {
     }
 
     const gameId = this.gameId;
+    const game = await this.getGame();
+    if (!game || game.host_id !== this.playerId) {
+      this.isHost = false;
+      throw new Error('Only the current host can start the game.');
+    }
+    if (game.status !== 'waiting') {
+      throw new Error('This game has already started.');
+    }
+
     const players = await this.getPlayers();
-    if (players.length < 2) {
-      throw new Error('At least two players are required to start the game.');
+    if (players.length < 4) {
+      throw new Error('At least four players are required to start the game.');
     }
 
     const shuffledPlayers = this.shuffleArray(players);

@@ -1,29 +1,27 @@
 'use client';
 
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useGame } from "../game/gameProvider";
 
 import SpaceBackground from "../components/SpaceBackground";
-import PlayerList from "../components/PlayerList";
-import LoadingDots from "../components/LoadingIcon";
 
 export default function HostScreen() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [gameId, setGameId] = useState('');
   const [hostName, setHostName] = useState('');
-  const [gameCreated, setGameCreated] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const { players, gameStatus, createGame, startGame, sessionReady, supabaseManager } = useGame();
+  const { createGame, sessionReady, supabaseManager } = useGame();
 
   useEffect(() => {
     if (!sessionReady) return;
 
-    if (supabaseManager.isHost && supabaseManager.gameCode && supabaseManager.playerId) {
-      setGameId(supabaseManager.gameCode);
-      setGameCreated(true);
+    if (supabaseManager.gameCode && supabaseManager.playerId) {
+      router.replace('/game');
+      return;
     }
     setLoading(false);
-  }, [sessionReady, supabaseManager]);
+  }, [router, sessionReady, supabaseManager]);
 
   const handleCreateGame = async () => {
     if (!hostName.trim()) return;
@@ -32,11 +30,10 @@ export default function HostScreen() {
       setLoading(true);
       setErrorMessage('');
       const result = await createGame(hostName);
-      setGameId(result.gameCode);
-      setGameCreated(true);
       sessionStorage.setItem('gameId', result.gameCode);
       sessionStorage.setItem('playerId', result.playerId);
       sessionStorage.setItem('isHost', 'true');
+      router.push('/game');
     } catch (error) {
       console.error('Error creating game:', error);
       setErrorMessage(error instanceof Error ? error.message : 'An unexpected error occurred while creating the game.');
@@ -45,66 +42,36 @@ export default function HostScreen() {
     }
   };
 
-  const handleGameStart = async () => {
-    try {
-      await startGame();
-    } catch (error) {
-      console.error('Error starting game:', error);
-      alert('Failed to start game. Please try again.');
-    }
-  };
-
-  if (!gameCreated) {
-    return (
-      <div className="w-screen h-screen overflow-hidden font-orbitron">
-        <SpaceBackground className="-z-10" />
-        <div className="w-full h-full flex flex-col items-center justify-center p-10">
-          <div className="bg-black/80 border border-stone-400 rounded-lg p-8 max-w-md w-full">
-            <h1 className="text-white text-2xl mb-6 text-center">Create Game</h1>
-            <input
-              type="text"
-              placeholder="Enter your name"
-              value={hostName}
-              onChange={(e) => setHostName(e.target.value)}
-              className="w-full p-3 mb-4 bg-stone-800 border border-stone-600 rounded text-white placeholder-stone-400"
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateGame()}
-            />
-            <button
-              className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-semibold disabled:opacity-50"
-              onClick={handleCreateGame}
-              disabled={loading || !hostName.trim()}
-            >
-              {loading ? 'Creating...' : 'Create Game'}
-            </button>
-            {errorMessage && <p className="mt-4 text-center text-red-400">{errorMessage}</p>}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="w-screen h-screen overflow-hidden font-orbitron">
       <SpaceBackground className="-z-10" />
-      <div className="w-full h-full flex flex-col items-center justify-between p-10">
-        <div className="w-full flex flex-col items-center flex-grow">
-          <div className="w-full mt-4 items-center flex flex-col">
-            <p className="text-green-600 text-xl">Game Code:</p>
-            {loading ? <LoadingDots /> : <code className="text-white text-2xl">{gameId}</code>}
-          </div>
-
-          <div className="w-full h-[60vh] overflow-y-scroll mt-4 flex flex-col items-start scrollbar-hide">
-            <PlayerList isHost={true} />
-          </div>
+      <div className="w-full h-full flex flex-col items-center justify-center p-10">
+        <div className="bg-black/80 border border-stone-400 rounded-lg p-8 max-w-md w-full">
+          <h1 className="text-white text-2xl mb-6 text-center">Create Game</h1>
+          <input
+            type="text"
+            placeholder="Enter your name"
+            value={hostName}
+            onChange={(e) => setHostName(e.target.value)}
+            className="w-full p-3 mb-4 bg-stone-800 border border-stone-600 rounded text-white placeholder-stone-400"
+            onKeyDown={(e) => e.key === 'Enter' && handleCreateGame()}
+            maxLength={15}
+          />
+          <button
+            className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg font-semibold disabled:opacity-50"
+            onClick={handleCreateGame}
+            disabled={loading || !hostName.trim()}
+          >
+            {loading ? 'Creating...' : 'Create Game'}
+          </button>
+          <button
+            className="w-full mt-3 bg-black border-2 border-stone-400 text-white px-4 py-2 rounded-lg hover:bg-stone-950 hover:border-white"
+            onClick={() => router.push('/')}
+          >
+            Cancel
+          </button>
+          {errorMessage && <p className="mt-4 text-center text-red-400">{errorMessage}</p>}
         </div>
-
-        <button
-          className="bg-black border-2 border-stone-400 text-white px-4 py-2 rounded-lg w-full max-w-64 hover:bg-stone-950 hover:border-white disabled:opacity-50"
-          onClick={handleGameStart}
-          disabled={gameStatus === 'started' || !players || Object.keys(players).length < 2}
-        >
-          {gameStatus === 'started' ? 'Game Started' : 'Start Game'}
-        </button>
       </div>
     </div>
   );

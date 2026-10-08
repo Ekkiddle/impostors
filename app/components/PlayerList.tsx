@@ -3,8 +3,8 @@ import { useGame } from '../game/gameProvider';
 import SpaceManIcon from './SpaceManIcon';
 import LoadingDots from './LoadingIcon';
 
-export default function PlayerList({ isHost }: { isHost: boolean }) {
-  const { players, supabaseManager } = useGame();
+export default function PlayerList() {
+  const { players, hostId } = useGame();
 
   if (!players || Object.keys(players).length === 0) {
     return (
@@ -15,17 +15,12 @@ export default function PlayerList({ isHost }: { isHost: boolean }) {
     );
   }
 
-  // Get the current player's ID
   const myId = sessionStorage.getItem('playerId');
-
-  // If the host is false, ensure the current player's card is at the top
-  let sortedPlayers = Object.values(players);
-  if (!isHost && myId) {
-    sortedPlayers = [
-      ...sortedPlayers.filter(player => player.id === myId), // Add the current player at the top
-      ...sortedPlayers.filter(player => player.id !== myId), // Add all other players below
-    ];
-  }
+  const sortedPlayers = Object.values(players).sort((first, second) => {
+    if (first.id === hostId) return -1;
+    if (second.id === hostId) return 1;
+    return first.created_at.localeCompare(second.created_at) || first.id.localeCompare(second.id);
+  });
 
   return (
     <div className="flex flex-col h-full w-full gap-4 mt-8 text-white w-full items-center">
@@ -38,7 +33,6 @@ export default function PlayerList({ isHost }: { isHost: boolean }) {
           <h3 className="text-lg font-bold">{player.name}</h3>
           <p>Status: {player.alive ? 'Alive' : 'Dead'}</p>
           <p>Role: {player.role}</p>
-          {/* Connection status circle */}
           <div
             className={`w-4 h-4 rounded-full ml-auto ${player.connected ? 'bg-green-500' : 'bg-red-500'}`}
           ></div>

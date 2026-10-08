@@ -7,10 +7,14 @@ import { initSupabaseManager } from './gameManager';
 interface GameContextType {
   players: Record<string, Player> | null;
   gameStatus: string;
+  hostId: string | null;
+  isHost: boolean;
   sessionReady: boolean;
   supabaseManager: SupabaseManager;
   createGame: (hostName: string) => Promise<{ gameId: string; gameCode: string; playerId: string }>;
+  deleteGame: (gameId: string) => Promise<void>;
   joinGame: (gameId: string, playerName: string) => Promise<{ gameId: string; gameCode: string; playerId: string }>;
+  leaveGame: () => Promise<void>;
   startGame: () => Promise<void>;
   updatePlayer: (updates: Partial<Player>) => Promise<void>;
   setPlayerAlive: (playerId: string, alive: boolean) => Promise<void>;
@@ -22,6 +26,7 @@ const GameContext = createContext<GameContextType | undefined>(undefined);
 export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [players, setPlayers] = useState<Record<string, Player> | null>(null);
   const [gameStatus, setGameStatus] = useState<string>('waiting');
+  const [hostId, setHostId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
 
   const [supabaseManager] = useState<SupabaseManager>(() => {
@@ -39,6 +44,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
     supabaseManager.setOnGameUpdate((game: Game) => {
       setGameStatus(game.status);
+      setHostId(game.host_id);
     });
 
     const storedGameCode = sessionStorage.getItem('gameId');
@@ -47,7 +53,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       void (async () => {
         await supabaseManager.restoreSession(storedGameCode, storedPlayerId);
         const game = await supabaseManager.getGame();
-        if (game) setGameStatus(game.status);
+        if (game) {
+          setGameStatus(game.status);
+          setHostId(game.host_id);
+        }
         await refreshPlayers();
       })()
         .catch(error => {
@@ -79,14 +88,32 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const createGame = async (hostName: string) => {
     const result = await supabaseManager.createGame(hostName);
+    setHostId(supabaseManager.hostId);
+    await refreshPlayers();
+    return result;
+  };
+
+  const deleteGame = async (gameId: string) => {
+    const result = await supabaseManager.deleteGame(gameId);
     await refreshPlayers();
     return result;
   };
 
   const joinGame = async (gameId: string, playerName: string) => {
     const result = await supabaseManager.joinGame(gameId, playerName);
+    setHostId(supabaseManager.hostId);
     await refreshPlayers();
     return result;
+  };
+
+  const leaveGame = async () => {
+    await supabaseManager.leaveGame();
+    sessionStorage.removeItem('gameId');
+    sessionStorage.removeItem('playerId');
+    sessionStorage.removeItem('isHost');
+    setPlayers(null);
+    setHostId(null);
+    setGameStatus('waiting');
   };
 
   const startGame = async () => {
@@ -107,10 +134,14 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     <GameContext.Provider value={{
       players,
       gameStatus,
+      hostId,
+      isHost: Boolean(supabaseManager.playerId && hostId === supabaseManager.playerId),
       sessionReady,
       supabaseManager,
       createGame,
+      deleteGame,
       joinGame,
+      leaveGame,
       startGame,
       updatePlayer,
       setPlayerAlive,

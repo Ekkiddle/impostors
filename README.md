@@ -12,12 +12,13 @@ NEXT_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<your-supabase-publishable-key>
 ```
 
-On a new database, apply the migrations in `supabase/migrations` in timestamp
-order to create the tables and task catalog. If the game tables already exist,
-apply [`supabase/migrations/20261008185000_seed_game_tasks.sql`](./supabase/migrations/20261008185000_seed_game_tasks.sql)
-so the task IDs used by the app are present. After changing environment
-variables in Vercel, redeploy so the Next.js build receives them. Do not use
-the Supabase secret key in the browser.
+On a new database, apply the migrations in `supabase/migrations` in timestamp order to create the tables and task catalog. If the game tables already exist, apply these pending migrations in order.
+
+The task migration ensures the task IDs used by the app are present; the
+leave-and-promote migrations enable player removal and automatic host handoff,
+and delete a game when its last player leaves.
+After changing environment variables in Vercel, redeploy so the Next.js build
+receives them. Do not use the Supabase secret key in the browser.
 
 To apply pending migrations to the linked Supabase project, install the
 Supabase CLI, link the project with `supabase link`, then run
@@ -25,10 +26,7 @@ Supabase CLI, link the project with `supabase link`, then run
 The configured [`supabase/seed.sql`](./supabase/seed.sql) also keeps the task
 catalog populated after `supabase db reset`.
 
-The initial migration permits anonymous read/write access for this no-login
-prototype. The publishable key is safe to expose, but those broad database
-policies mean anyone with the project URL can read or modify game data; tighten
-the policies before using this for a production game with private player data.
+The initial migration permits anonymous read/write access for this no-login prototype. The publishable key is safe to expose, but those broad database policies mean anyone with the project URL can read or modify game data; tighten the policies before using this for a production game with private player data.
 
 For local development, run:
 
@@ -43,12 +41,12 @@ npm run build
 npm run start
 ```
 
-Connect clients and peers. One device must act as the host (please do not disconnect the host or refresh the browser, or there will be clear problems and will result in nobody being able to play the game (everyone will be disconnected)). I'll leave an opportunity for reconnect though.
+Create a game from the host page or join one with its six-character game code. All players share the same lobby; it displays the code and keeps the host at the top of the player list. The host can start the game once at least four players have joined. Leaving the lobby removes that player, and the oldest remaining player becomes host if the host leaves.
 
 ## Playing the Game
 Set the number of impostors you would like to play with (fixed, or percentage of players (rounded to nearest whole impostor))
 
-A single device will act as the host device, which manages connections between all peers. This also displays the status and names of all players in lobby (disconnections, alive/dead, name, color, etc.)
+The host can start the game for all connected players from the shared lobby.
 
 All other devices are players. Once the game begins, a portion will be assigned the role of impostor (also revealing to them the other impostors playing), or a crewmate.
 
