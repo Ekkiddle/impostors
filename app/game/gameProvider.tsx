@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import SupabaseManager, { type Player } from './supabaseManager';
+import SupabaseManager, { type Game, type Player } from './supabaseManager';
 import { initSupabaseManager } from './gameManager';
 
 interface GameContextType {
@@ -9,7 +9,7 @@ interface GameContextType {
   gameStatus: string;
   supabaseManager: SupabaseManager;
   createGame: (hostName: string) => Promise<{ gameId: string; gameCode: string; playerId: string }>;
-  joinGame: (gameId: string, playerName: string) => Promise<{ gameId: string; playerId: string }>;
+  joinGame: (gameId: string, playerName: string) => Promise<{ gameId: string; gameCode: string; playerId: string }>;
   startGame: () => Promise<void>;
   updatePlayer: (updates: Partial<Player>) => Promise<void>;
   setPlayerAlive: (playerId: string, alive: boolean) => Promise<void>;
@@ -29,17 +29,28 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   });
 
   useEffect(() => {
-    // This is the "Bridge" we discussed.
-    // When Supabase signals a change, React re-fetches data.
     supabaseManager.setOnPlayersUpdate(() => {
-      refreshPlayers();
+      void refreshPlayers().catch(error => {
+        console.error('Error refreshing players from Supabase:', error);
+      });
     });
 
-    supabaseManager.setOnGameUpdate((payload: { new?: { status: string } }) => {
-      if (payload.new) {
-        setGameStatus(payload.new.status);
-      }
+    supabaseManager.setOnGameUpdate((game: Game) => {
+      setGameStatus(game.status);
     });
+
+    const storedGameCode = sessionStorage.getItem('gameId');
+    const storedPlayerId = sessionStorage.getItem('playerId');
+    if (storedGameCode && storedPlayerId) {
+      void (async () => {
+        await supabaseManager.restoreSession(storedGameCode, storedPlayerId);
+        const game = await supabaseManager.getGame();
+        if (game) setGameStatus(game.status);
+        await refreshPlayers();
+      })().catch(error => {
+        console.error('Error restoring game session:', error);
+      });
+    }
 
     return () => {
       supabaseManager.disconnect();
@@ -48,16 +59,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const refreshPlayers = async () => {
     if (supabaseManager.gameId) {
-      try {
-        const playersData: Player[] = await supabaseManager.getPlayers();
-        const playersObj: Record<string, Player> = {};
-        playersData.forEach(player => {
-          playersObj[player.id] = player;
-        });
-        setPlayers(playersObj);
-      } catch (error) {
-        console.error('Error refreshing players:', error);
-      }
+      const playersData: Player[] = await supabaseManager.getPlayers();
+      const playersObj: Record<string, Player> = {};
+      playersData.forEach(player => {
+        playersObj[player.id] = player;
+      });
+      setPlayers(playersObj);
     }
   };
 
@@ -75,6 +82,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const startGame = async () => {
     await supabaseManager.assignRoles();
+    const game = await supabaseManager.getGame();
+    if (game) setGameStatus(game.status);
   };
 
   const updatePlayer = async (updates: Partial<Player>) => {

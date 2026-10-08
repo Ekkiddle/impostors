@@ -13,6 +13,22 @@ CREATE TABLE games (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Available tasks table
+CREATE TABLE tasks (
+  id TEXT PRIMARY KEY,
+  task TEXT NOT NULL,
+  location TEXT NOT NULL
+);
+
+INSERT INTO tasks (id, task, location) VALUES
+  ('wire', 'Fix Wiring', 'Electrical'),
+  ('align-engine', 'Align Engine Output', 'Engine Room'),
+  ('asteroids', 'Clear Asteroids', 'Weapons'),
+  ('navigate', 'Chart Course', 'Navigation'),
+  ('shields', 'Prime Shields', 'Shields'),
+  ('steering', 'Stabilize Steering', 'Navigation'),
+  ('swipe-card', 'Swipe Card', 'Admin');
+
 -- Players table
 CREATE TABLE players (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -36,13 +52,6 @@ CREATE TABLE players_tasks (
   completed BOOLEAN DEFAULT false,
   value INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Available tasks table
-CREATE TABLE tasks (
-  id TEXT PRIMARY KEY,
-  task TEXT NOT NULL,
-  location TEXT NOT NULL
 );
 
 -- Enable Row Level Security

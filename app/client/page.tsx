@@ -34,7 +34,7 @@ export default function Lobby() {
       setErrorMsg('');
       const result = await joinGame(gameId.trim().toUpperCase(), name.trim());
       setJoined(true);
-      sessionStorage.setItem('gameId', result.gameId);
+      sessionStorage.setItem('gameId', result.gameCode);
       sessionStorage.setItem('playerId', result.playerId);
       sessionStorage.setItem('isHost', 'false');
     } catch (error) {

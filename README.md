@@ -3,6 +3,27 @@ This project was inspired by AmongUs, but I wanted to be able to play a game lik
 
 ## Running the app
 
+The app uses Supabase for game and player state. Set these browser-safe variables
+in `.env.local` for local development and in the Vercel project settings for
+deployments:
+
+```dotenv
+NEXT_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<your-supabase-publishable-key>
+```
+
+On a new database, apply the migrations in `supabase/migrations` in timestamp
+order to create the tables and task catalog. If the game tables already exist,
+apply [`supabase/migrations/20261008185000_seed_game_tasks.sql`](./supabase/migrations/20261008185000_seed_game_tasks.sql)
+so the task IDs used by the app are present. After changing environment
+variables in Vercel, redeploy so the Next.js build receives them. Do not use
+the Supabase secret key in the browser.
+
+The initial migration permits anonymous read/write access for this no-login
+prototype. The publishable key is safe to expose, but those broad database
+policies mean anyone with the project URL can read or modify game data; tighten
+the policies before using this for a production game with private player data.
+
 For local development, run:
 
 ```bash

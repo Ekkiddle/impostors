@@ -1,4 +1,4 @@
-// --- Interfaces ---
+import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
 
 export interface Player {
   id: string;
@@ -24,259 +24,421 @@ interface GameResult {
   playerId: string;
 }
 
-// --- In-Memory State & Event Bus ---
+type DatabasePlayer = Omit<Player, 'tasks'>;
+type TaskAssignment = { game_id: string; player_id: string; task_id: string };
+type PlayerTaskRow = Pick<TaskAssignment, 'player_id' | 'task_id'>;
 
-const gamesStore = new Map<string, Game>();
-const playersStore = new Map<string, Player>();
-const eventBus = new EventTarget();
-
-// --- Class Implementation ---
+const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+const taskPool = ['wire', 'align-engine', 'asteroids', 'navigate', 'shields', 'steering', 'swipe-card'];
 
 class SupabaseManager {
   public gameId: string | null = null;
   public gameCode: string | null = null;
   public playerId: string | null = null;
-  public isHost: boolean = false;
+  public isHost = false;
 
-  private onPlayersUpdate?: (payload: any) => void;
-  private onGameUpdate?: (payload: any) => void;
-
-  private handlePlayersEvent = (e: Event) => {
-    const customEvent = e as CustomEvent;
-    if (customEvent.detail?.gameId === this.gameId && this.onPlayersUpdate) {
-      this.onPlayersUpdate(customEvent.detail);
-    }
-  };
-
-  private handleGameEvent = (e: Event) => {
-    const customEvent = e as CustomEvent;
-    if (customEvent.detail?.gameId === this.gameId && this.onGameUpdate) {
-      this.onGameUpdate(customEvent.detail);
-    }
-  };
+  private readonly client: SupabaseClient;
+  private channel: RealtimeChannel | null = null;
+  private onPlayersUpdate?: () => void;
+  private onGameUpdate?: (game: Game) => void;
 
   constructor() {
-    this.gameId = null;
-    this.gameCode = null;
-    this.playerId = null;
-    this.isHost = false;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+    if (!url || !publishableKey) {
+      throw new Error(
+        'Supabase configuration is missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.'
+      );
+    }
+
+    this.client = createClient(url, publishableKey);
   }
 
-  generateGameCode(): string {
+  private generateGameCode(): string {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = '';
-    for (let i = 0; i < 6; i++) {
-      code += characters.charAt(Math.floor(Math.random() * characters.length));
-    }
-    return code;
+    return Array.from(
+      { length: 6 },
+      () => characters.charAt(Math.floor(Math.random() * characters.length))
+    ).join('');
   }
 
   async createGame(hostName: string): Promise<GameResult> {
-    const gameId = 'game_' + Math.random().toString(36).substring(2, 9);
-    const gameCode = this.generateGameCode();
+    let game: Game | null = null;
 
-    const game: Game = {
-      id: gameId,
-      code: gameCode,
-      status: 'waiting',
-      host_id: null,
-    };
-    gamesStore.set(gameId, game);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data, error } = await this.client
+        .from('games')
+        .insert({ code: this.generateGameCode(), status: 'waiting' })
+        .select('id, code, status, host_id')
+        .single();
 
-    this.gameId = gameId;
-    this.gameCode = gameCode;
+      if (!error) {
+        game = data;
+        break;
+      }
+      if (error.code !== '23505') {
+        throw new Error(`Could not create game: ${error.message}`);
+      }
+    }
+
+    if (!game) {
+      throw new Error('Could not create a unique game code. Please try again.');
+    }
+
+    this.gameId = game.id;
+    this.gameCode = game.code;
     this.isHost = true;
 
-    const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
-    const player: Player = {
-      id: playerId,
-      game_id: this.gameId,
-      name: hostName,
-      color: this.generateUniqueColor(),
-      connected: true,
-      alive: true,
-      role: 'pending',
-      tasks: [],
-    };
+    const { data: player, error: playerError } = await this.client
+      .from('players')
+      .insert({
+        game_id: game.id,
+        name: hostName,
+        color: this.pickAvailableColor([]),
+        connected: true,
+        alive: true,
+        role: 'pending',
+      })
+      .select('id')
+      .single();
 
-    playersStore.set(playerId, player);
-    this.playerId = playerId;
+    if (playerError) {
+      await this.client.from('games').delete().eq('id', game.id);
+      throw new Error(`Could not create host player: ${playerError.message}`);
+    }
 
-    // Set host on the game
-    game.host_id = this.playerId;
-    gamesStore.set(gameId, game);
+    const { error: hostError } = await this.client
+      .from('games')
+      .update({ host_id: player.id })
+      .eq('id', game.id);
 
+    if (hostError) {
+      throw new Error(`Could not assign game host: ${hostError.message}`);
+    }
+
+    this.playerId = player.id;
     this.setupSubscriptions();
 
-    return {
-      gameId: this.gameId,
-      gameCode: this.gameCode,
-      playerId: this.playerId,
-    };
+    return { gameId: game.id, gameCode: game.code, playerId: player.id };
   }
 
   async joinGame(gameCode: string, playerName: string): Promise<GameResult> {
-    const game = Array.from(gamesStore.values()).find(
-      (g) => g.code === gameCode && g.status === 'waiting'
-    );
+    const normalizedCode = gameCode.trim().toUpperCase();
+    const { data: game, error: gameError } = await this.client
+      .from('games')
+      .select('id, code, status, host_id')
+      .eq('code', normalizedCode)
+      .eq('status', 'waiting')
+      .maybeSingle();
 
-    if (!game) throw new Error('Game not found or not accepting players');
+    if (gameError) {
+      throw new Error(`Could not find game: ${gameError.message}`);
+    }
+    if (!game) {
+      throw new Error('Game not found or not accepting players.');
+    }
+
+    const { data: currentPlayers, error: playersError } = await this.client
+      .from('players')
+      .select('color')
+      .eq('game_id', game.id);
+
+    if (playersError) {
+      throw new Error(`Could not load players: ${playersError.message}`);
+    }
+
+    const { data: player, error: playerError } = await this.client
+      .from('players')
+      .insert({
+        game_id: game.id,
+        name: playerName,
+        color: this.pickAvailableColor(currentPlayers.map(({ color }) => color)),
+        connected: true,
+        alive: true,
+        role: 'pending',
+      })
+      .select('id')
+      .single();
+
+    if (playerError) {
+      throw new Error(`Could not join game: ${playerError.message}`);
+    }
 
     this.gameId = game.id;
-    this.gameCode = gameCode;
+    this.gameCode = game.code;
+    this.playerId = player.id;
     this.isHost = false;
-
-    const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
-    const player: Player = {
-      id: this.gameId,
-      game_id: this.gameId,
-      name: playerName,
-      color: await this.generateUniqueColorForGame(),
-      connected: true,
-      alive: true,
-      role: 'pending',
-      tasks: [],
-    };
-
-    playersStore.set(playerId, player);
-    this.playerId = playerId;
-
     this.setupSubscriptions();
-    this.notifyPlayersUpdate('INSERT', player);
 
-    return {
-      gameId: this.gameId,
-      gameCode: this.gameCode,
-      playerId: this.playerId,
-    };
+    return { gameId: game.id, gameCode: game.code, playerId: player.id };
   }
 
-  setupSubscriptions(): void {
+  async restoreSession(gameCode: string, playerId: string): Promise<void> {
+    const normalizedCode = gameCode.trim().toUpperCase();
+    const { data: game, error: gameError } = await this.client
+      .from('games')
+      .select('id, code, status, host_id')
+      .eq('code', normalizedCode)
+      .maybeSingle();
+
+    if (gameError) {
+      throw new Error(`Could not restore game: ${gameError.message}`);
+    }
+    if (!game) {
+      throw new Error('The saved game no longer exists.');
+    }
+
+    const { data: player, error: playerError } = await this.client
+      .from('players')
+      .select('id')
+      .eq('id', playerId)
+      .eq('game_id', game.id)
+      .maybeSingle();
+
+    if (playerError) {
+      throw new Error(`Could not restore player: ${playerError.message}`);
+    }
+    if (!player) {
+      throw new Error('The saved player is no longer in this game.');
+    }
+
+    this.gameId = game.id;
+    this.gameCode = game.code;
+    this.playerId = player.id;
+    this.isHost = game.host_id === player.id;
+    this.setupSubscriptions();
+    this.onGameUpdate?.(game);
+  }
+
+  private setupSubscriptions(): void {
     if (!this.gameId) return;
 
-    eventBus.addEventListener('players_update', this.handlePlayersEvent);
-    eventBus.addEventListener('game_update', this.handleGameEvent);
+    if (this.channel) {
+      void this.client.removeChannel(this.channel).then((status) => {
+        if (status !== 'ok') console.error(`Supabase channel cleanup failed: ${status}`);
+      });
+    }
+
+    const gameId = this.gameId;
+    this.channel = this.client
+      .channel(`game:${gameId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'players', filter: `game_id=eq.${gameId}` },
+        () => this.onPlayersUpdate?.()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'players_tasks', filter: `game_id=eq.${gameId}` },
+        () => this.onPlayersUpdate?.()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
+        (payload) => this.onGameUpdate?.(payload.new as Game)
+      )
+      .subscribe((status, error) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error('Supabase realtime subscription failed:', error ?? status);
+        }
+      });
   }
 
   async updatePlayer(updates: Partial<Player>): Promise<void> {
-    if (!this.playerId) return;
-    const player = playersStore.get(this.playerId);
-    if (!player) return;
+    if (!this.playerId) throw new Error('Cannot update player before joining a game.');
 
-    const updatedPlayer = { ...player, ...updates };
-    playersStore.set(this.playerId, updatedPlayer);
+    const { tasks, ...playerUpdates } = updates;
+    if (Object.keys(playerUpdates).length > 0) {
+      const { error } = await this.client
+        .from('players')
+        .update(playerUpdates)
+        .eq('id', this.playerId);
 
-    this.notifyPlayersUpdate('UPDATE', updatedPlayer);
+      if (error) {
+        throw new Error(`Could not update player: ${error.message}`);
+      }
+    }
+
+    if (tasks) {
+      await this.setPlayerTasks(this.playerId, tasks);
+    }
   }
 
   async removePlayer(playerId: string): Promise<void> {
-    const player = playersStore.get(playerId);
-    if (player) {
-      playersStore.delete(playerId);
-      this.notifyPlayersUpdate('DELETE', player);
+    const { error } = await this.client.from('players').delete().eq('id', playerId);
+    if (error) {
+      throw new Error(`Could not remove player: ${error.message}`);
     }
   }
 
   async getPlayers(): Promise<Player[]> {
     if (!this.gameId) return [];
-    return Array.from(playersStore.values()).filter(
-      (p) => p.game_id === this.gameId
-    );
+
+    const { data: playerRows, error: playersError } = await this.client
+      .from('players')
+      .select('id, game_id, name, color, connected, alive, role')
+      .eq('game_id', this.gameId);
+
+    if (playersError) {
+      throw new Error(`Could not load players: ${playersError.message}`);
+    }
+
+    const { data: taskRows, error: tasksError } = await this.client
+      .from('players_tasks')
+      .select('player_id, task_id')
+      .eq('game_id', this.gameId);
+
+    if (tasksError) {
+      throw new Error(`Could not load player tasks: ${tasksError.message}`);
+    }
+
+    const tasksByPlayer = new Map<string, string[]>();
+    taskRows.forEach(({ player_id, task_id }: PlayerTaskRow) => {
+      const tasks = tasksByPlayer.get(player_id) ?? [];
+      tasks.push(task_id);
+      tasksByPlayer.set(player_id, tasks);
+    });
+
+    return (playerRows as DatabasePlayer[]).map((player) => ({
+      ...player,
+      tasks: tasksByPlayer.get(player.id) ?? [],
+    }));
+  }
+
+  async getGame(): Promise<Game | null> {
+    if (!this.gameId) return null;
+    const { data, error } = await this.client
+      .from('games')
+      .select('id, code, status, host_id')
+      .eq('id', this.gameId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Could not load game: ${error.message}`);
+    }
+    return data;
   }
 
   async assignRoles(): Promise<void> {
-    if (!this.isHost || !this.gameId) return;
+    if (!this.isHost || !this.gameId) {
+      throw new Error('Only the host can start the game.');
+    }
 
+    const gameId = this.gameId;
     const players = await this.getPlayers();
-    const ids = players.map((p) => p.id);
-    const shuffled = this.shuffleArray([...ids]);
-    const impostorCount = Math.max(1, Math.floor(shuffled.length / 5));
+    if (players.length < 2) {
+      throw new Error('At least two players are required to start the game.');
+    }
 
-    for (let i = 0; i < shuffled.length; i++) {
-      const role = i < impostorCount ? 'impostor' : 'crewmate';
-      const tasks = i >= impostorCount ? this.generateTasks() : [];
-      const p = playersStore.get(shuffled[i]??"");
-      if (p) {
-        const updated = { ...p, role, tasks };
-        playersStore.set(shuffled[i]??"", updated as Player);
-        this.notifyPlayersUpdate('UPDATE', updated);
+    const shuffledPlayers = this.shuffleArray(players);
+    const impostorCount = Math.max(1, Math.floor(shuffledPlayers.length / 5));
+
+    const { error: deleteError } = await this.client
+      .from('players_tasks')
+      .delete()
+      .eq('game_id', gameId);
+    if (deleteError) {
+      throw new Error(`Could not reset player tasks: ${deleteError.message}`);
+    }
+
+    const taskAssignments: TaskAssignment[] = [];
+    for (let index = 0; index < shuffledPlayers.length; index++) {
+      const player = shuffledPlayers[index]!;
+      const isImpostor = index < impostorCount;
+      const { error } = await this.client
+        .from('players')
+        .update({ role: isImpostor ? 'impostor' : 'crewmate' })
+        .eq('id', player.id);
+      if (error) {
+        throw new Error(`Could not assign player role: ${error.message}`);
+      }
+
+      if (!isImpostor) {
+        this.shuffleArray(taskPool).slice(0, 3).forEach((taskId) => {
+          taskAssignments.push({ game_id: gameId, player_id: player.id, task_id: taskId });
+        });
       }
     }
 
-    const game = gamesStore.get(this.gameId);
-    if (game) {
-      game.status = 'started';
-      gamesStore.set(this.gameId, game);
-      this.notifyGameUpdate('UPDATE', game);
+    if (taskAssignments.length > 0) {
+      const { error } = await this.client.from('players_tasks').insert(taskAssignments);
+      if (error) {
+        throw new Error(`Could not assign player tasks: ${error.message}`);
+      }
+    }
+
+    const { error } = await this.client
+      .from('games')
+      .update({ status: 'started' })
+      .eq('id', gameId);
+    if (error) {
+      throw new Error(`Could not start game: ${error.message}`);
     }
   }
 
   async setPlayerAlive(playerId: string, alive: boolean): Promise<void> {
-    const player = playersStore.get(playerId);
-    if (player) {
-      const updated = { ...player, alive };
-      playersStore.set(playerId, updated);
-      this.notifyPlayersUpdate('UPDATE', updated);
+    const { error } = await this.client
+      .from('players')
+      .update({ alive })
+      .eq('id', playerId);
+    if (error) {
+      throw new Error(`Could not update player status: ${error.message}`);
     }
   }
 
-  // --- Utilities ---
+  private async setPlayerTasks(playerId: string, tasks: string[]): Promise<void> {
+    if (!this.gameId) throw new Error('Cannot assign tasks before joining a game.');
 
-  private generateUniqueColor(): string {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
-    return colors[Math.floor(Math.random() * colors.length)]!;
+    const gameId = this.gameId;
+    const { error: deleteError } = await this.client
+      .from('players_tasks')
+      .delete()
+      .eq('player_id', playerId);
+    if (deleteError) {
+      throw new Error(`Could not reset player tasks: ${deleteError.message}`);
+    }
+
+    if (tasks.length === 0) return;
+    const { error } = await this.client.from('players_tasks').insert(
+      tasks.map((task_id) => ({ game_id: gameId, player_id: playerId, task_id }))
+    );
+    if (error) {
+      throw new Error(`Could not update player tasks: ${error.message}`);
+    }
   }
 
-  private async generateUniqueColorForGame(): Promise<string> {
-    const players = await this.getPlayers();
-    const usedColors = players.map((p) => p.color);
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
-    const available = colors.filter((c) => !usedColors.includes(c));
-    return available.length > 0
-      ? available[Math.floor(Math.random() * available.length)]!
+  private pickAvailableColor(usedColors: string[]): string {
+    const availableColors = colors.filter((color) => !usedColors.includes(color));
+    return availableColors.length > 0
+      ? availableColors[Math.floor(Math.random() * availableColors.length)]!
       : '#FFFFFF';
   }
 
-  private shuffleArray<T>(arr: T[]): T[] {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  private shuffleArray<T>(values: T[]): T[] {
+    const shuffled = [...values];
+    for (let index = shuffled.length - 1; index > 0; index--) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex]!, shuffled[index]!];
     }
-    return arr;
+    return shuffled;
   }
 
-  private generateTasks(): string[] {
-    const pool = ['wire', 'align-engine', 'asteroids', 'navigate', 'shields', 'steering', 'swipe-card'];
-    return this.shuffleArray([...pool]).slice(0, 3);
-  }
-
-  private notifyPlayersUpdate(eventType: string, record: any) {
-    eventBus.dispatchEvent(
-      new CustomEvent('players_update', {
-        detail: { gameId: this.gameId, eventType, new: record },
-      })
-    );
-  }
-
-  private notifyGameUpdate(eventType: string, record: any) {
-    eventBus.dispatchEvent(
-      new CustomEvent('game_update', {
-        detail: { gameId: this.gameId, eventType, new: record },
-      })
-    );
-  }
-
-  setOnPlayersUpdate(callback: (payload: any) => void): void {
+  setOnPlayersUpdate(callback: () => void): void {
     this.onPlayersUpdate = callback;
   }
 
-  setOnGameUpdate(callback: (payload: any) => void): void {
+  setOnGameUpdate(callback: (game: Game) => void): void {
     this.onGameUpdate = callback;
   }
 
   disconnect(): void {
-    eventBus.removeEventListener('players_update', this.handlePlayersEvent);
-    eventBus.removeEventListener('game_update', this.handleGameEvent);
+    if (!this.channel) return;
+
+    void this.client.removeChannel(this.channel).then((status) => {
+      if (status !== 'ok') console.error(`Supabase channel cleanup failed: ${status}`);
+    });
+    this.channel = null;
   }
 }
 
