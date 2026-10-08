@@ -28,6 +28,17 @@ type DatabasePlayer = Omit<Player, 'tasks'>;
 type TaskAssignment = { game_id: string; player_id: string; task_id: string };
 type PlayerTaskRow = Pick<TaskAssignment, 'player_id' | 'task_id'>;
 
+function formatSupabaseError(error: { message: string; code?: string; details?: string; hint?: string }): string {
+  return [
+    error.message,
+    error.code && `Code: ${error.code}`,
+    error.details,
+    error.hint && `Hint: ${error.hint}`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
 const taskPool = ['wire', 'align-engine', 'asteroids', 'navigate', 'shields', 'steering', 'swipe-card'];
 
@@ -78,7 +89,7 @@ class SupabaseManager {
         break;
       }
       if (error.code !== '23505') {
-        throw new Error(`Could not create game: ${error.message}`);
+        throw new Error(`Could not create game: ${formatSupabaseError(error)}`);
       }
     }
 
@@ -104,8 +115,11 @@ class SupabaseManager {
       .single();
 
     if (playerError) {
-      await this.client.from('games').delete().eq('id', game.id);
-      throw new Error(`Could not create host player: ${playerError.message}`);
+      const { error: cleanupError } = await this.client.from('games').delete().eq('id', game.id);
+      if (cleanupError) {
+        console.error('Could not clean up game after host creation failed:', cleanupError);
+      }
+      throw new Error(`Could not create host player: ${formatSupabaseError(playerError)}`);
     }
 
     const { error: hostError } = await this.client
@@ -114,7 +128,7 @@ class SupabaseManager {
       .eq('id', game.id);
 
     if (hostError) {
-      throw new Error(`Could not assign game host: ${hostError.message}`);
+      throw new Error(`Could not assign game host: ${formatSupabaseError(hostError)}`);
     }
 
     this.playerId = player.id;

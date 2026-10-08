@@ -12,25 +12,25 @@ export default function HostScreen() {
   const [gameId, setGameId] = useState('');
   const [hostName, setHostName] = useState('');
   const [gameCreated, setGameCreated] = useState(false);
-  const { players, gameStatus, createGame, startGame } = useGame();
+  const [errorMessage, setErrorMessage] = useState('');
+  const { players, gameStatus, createGame, startGame, sessionReady, supabaseManager } = useGame();
 
   useEffect(() => {
-    // Check if we already have a game in progress
-    const storedGameId = sessionStorage.getItem('gameId');
-    const storedPlayerId = sessionStorage.getItem('playerId');
+    if (!sessionReady) return;
 
-    if (storedGameId && storedPlayerId) {
-      setGameId(storedGameId);
+    if (supabaseManager.isHost && supabaseManager.gameCode && supabaseManager.playerId) {
+      setGameId(supabaseManager.gameCode);
       setGameCreated(true);
     }
     setLoading(false);
-  }, []);
+  }, [sessionReady, supabaseManager]);
 
   const handleCreateGame = async () => {
     if (!hostName.trim()) return;
 
     try {
       setLoading(true);
+      setErrorMessage('');
       const result = await createGame(hostName);
       setGameId(result.gameCode);
       setGameCreated(true);
@@ -39,7 +39,7 @@ export default function HostScreen() {
       sessionStorage.setItem('isHost', 'true');
     } catch (error) {
       console.error('Error creating game:', error);
-      alert('Failed to create game. Please try again.');
+      setErrorMessage(error instanceof Error ? error.message : 'An unexpected error occurred while creating the game.');
     } finally {
       setLoading(false);
     }
@@ -76,6 +76,7 @@ export default function HostScreen() {
             >
               {loading ? 'Creating...' : 'Create Game'}
             </button>
+            {errorMessage && <p className="mt-4 text-center text-red-400">{errorMessage}</p>}
           </div>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { initSupabaseManager } from './gameManager';
 interface GameContextType {
   players: Record<string, Player> | null;
   gameStatus: string;
+  sessionReady: boolean;
   supabaseManager: SupabaseManager;
   createGame: (hostName: string) => Promise<{ gameId: string; gameCode: string; playerId: string }>;
   joinGame: (gameId: string, playerName: string) => Promise<{ gameId: string; gameCode: string; playerId: string }>;
@@ -21,6 +22,7 @@ const GameContext = createContext<GameContextType | undefined>(undefined);
 export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [players, setPlayers] = useState<Record<string, Player> | null>(null);
   const [gameStatus, setGameStatus] = useState<string>('waiting');
+  const [sessionReady, setSessionReady] = useState(false);
 
   const [supabaseManager] = useState<SupabaseManager>(() => {
     const sm = new SupabaseManager();
@@ -47,9 +49,16 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         const game = await supabaseManager.getGame();
         if (game) setGameStatus(game.status);
         await refreshPlayers();
-      })().catch(error => {
-        console.error('Error restoring game session:', error);
-      });
+      })()
+        .catch(error => {
+          console.error('Error restoring game session:', error);
+          sessionStorage.removeItem('gameId');
+          sessionStorage.removeItem('playerId');
+          sessionStorage.removeItem('isHost');
+        })
+        .finally(() => setSessionReady(true));
+    } else {
+      setSessionReady(true);
     }
 
     return () => {
@@ -98,6 +107,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     <GameContext.Provider value={{
       players,
       gameStatus,
+      sessionReady,
       supabaseManager,
       createGame,
       joinGame,

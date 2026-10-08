@@ -13,18 +13,14 @@ export default function Lobby() {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { joinGame } = useGame();
+  const { joinGame, sessionReady, supabaseManager } = useGame();
 
   useEffect(() => {
-    // Check if we already joined a game
-    const storedGameId = sessionStorage.getItem('gameId');
-    const storedPlayerId = sessionStorage.getItem('playerId');
-
-    if (storedGameId && storedPlayerId) {
-      setGameId(storedGameId);
+    if (sessionReady && supabaseManager.gameId && supabaseManager.playerId) {
+      setGameId(supabaseManager.gameCode ?? '');
       setJoined(true);
     }
-  }, []);
+  }, [sessionReady, supabaseManager]);
 
   const handleJoinClick = async () => {
     if (!gameId.trim() || !name.trim()) return;
@@ -82,10 +78,11 @@ export default function Lobby() {
             </div>
           </div>
           <button
-            className="bg-black border-2 border-stone-400 text-white px-4 py-2 rounded-lg w-full max-w-64 hover:bg-stone-950 hover:border-white"
+            className="bg-black border-2 border-stone-400 text-white px-4 py-2 rounded-lg w-full max-w-64 hover:bg-stone-950 hover:border-white disabled:opacity-50"
             onClick={handleJoinClick}
+            disabled={loading || !sessionReady}
           >
-            Join Game
+            {loading ? 'Joining...' : 'Join Game'}
           </button>
           {errorMsg && (
             <p className="text-red-500 mt-2 font-semibold">{errorMsg}</p>
