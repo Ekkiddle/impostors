@@ -19,6 +19,12 @@ so the task IDs used by the app are present. After changing environment
 variables in Vercel, redeploy so the Next.js build receives them. Do not use
 the Supabase secret key in the browser.
 
+To apply pending migrations to the linked Supabase project, install the
+Supabase CLI, link the project with `supabase link`, then run
+`supabase db push --include-seed` to apply migrations and seed the task catalog.
+The configured [`supabase/seed.sql`](./supabase/seed.sql) also keeps the task
+catalog populated after `supabase db reset`.
+
 The initial migration permits anonymous read/write access for this no-login
 prototype. The publishable key is safe to expose, but those broad database
 policies mean anyone with the project URL can read or modify game data; tighten
