@@ -12,19 +12,34 @@ NEXT_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<your-supabase-publishable-key>
 ```
 
-On a new database, apply the migrations in `supabase/migrations` in timestamp order to create the tables and task catalog. If the game tables already exist, apply these pending migrations in order.
+## Resetting the Supabase database
 
-The task migration ensures the task IDs used by the app are present; the
-leave-and-promote migrations enable player removal and automatic host handoff,
-and delete a game when its last player leaves.
-After changing environment variables in Vercel, redeploy so the Next.js build
-receives them. Do not use the Supabase secret key in the browser.
+The schema migrations create the `games`, `players`, `maps`, `maps_tasks`, and
+`players_tasks` tables, then seed the default `SKELD` map and its task catalog.
+The schema migration also installs the player-leave and host-promotion function.
 
-To apply pending migrations to the linked Supabase project, install the
-Supabase CLI, link the project with `supabase link`, then run
-`supabase db push --include-seed` to apply migrations and seed the task catalog.
-The configured [`supabase/seed.sql`](./supabase/seed.sql) also keeps the task
-catalog populated after `supabase db reset`.
+Resetting drops existing database data. Back up anything you need before
+resetting. To reset the linked Supabase project and recreate it from the current
+migrations:
+
+```bash
+supabase login
+supabase link --project-ref <your-project-ref>
+supabase db reset --linked
+```
+
+If the project is already linked, omit the `supabase link` command. For a local
+Supabase database, start the local stack and reset it with:
+
+```bash
+supabase start
+supabase db reset
+```
+
+Do not use `supabase db push` to replace an existing database's schema; use the
+reset command when you intend to discard the old schema and data. After changing
+environment variables in Vercel, redeploy so the Next.js build receives them.
+Do not use the Supabase secret key in the browser.
 
 The initial migration permits anonymous read/write access for this no-login prototype. The publishable key is safe to expose, but those broad database policies mean anyone with the project URL can read or modify game data; tighten the policies before using this for a production game with private player data.
 
