@@ -8,6 +8,7 @@ export interface Player {
   connected: boolean;
   alive: boolean;
   role: 'pending' | 'impostor' | 'crewmate';
+  player_vote: string | null;
   tasks: string[];
   created_at: string;
 }
@@ -15,8 +16,18 @@ export interface Player {
 export interface Game {
   id: string;
   code: string;
-  status: 'waiting' | 'started' | 'ended';
   host_id: string | null;
+  status: 'waiting' | 'started' | 'ended';
+  map_id: string | null;
+  num_impostors: number | null;
+  created_at: string;
+}
+
+export interface MapTask {
+  task_id: string;
+  map_location: string;
+  task_type: string;
+  sub_task_type: string;
 }
 
 interface GameResult {
@@ -28,6 +39,7 @@ interface GameResult {
 type DatabasePlayer = Omit<Player, 'tasks'>;
 type TaskAssignment = { game_id: string; player_id: string; task_id: string };
 type PlayerTaskRow = Pick<TaskAssignment, 'player_id' | 'task_id'>;
+type MapTaskRow = { task_id: string };
 
 function formatSupabaseError(error: { message: string; code?: string; details?: string; hint?: string }): string {
   return [
@@ -41,7 +53,6 @@ function formatSupabaseError(error: { message: string; code?: string; details?: 
 }
 
 const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
-const taskPool = ['wire', 'align-engine', 'asteroids', 'navigate', 'shields', 'steering', 'swipe-card'];
 
 class SupabaseManager {
   public gameId: string | null = null;
@@ -50,6 +61,7 @@ class SupabaseManager {
   public hostId: string | null = null;
   public isHost = false;
 
+  private currentGameStatus: Game['status'] | null = null;
   private readonly client: SupabaseClient;
   private readonly supabaseUrl: string;
   private readonly publishableKey: string;
@@ -73,7 +85,7 @@ class SupabaseManager {
   }
 
   private generateGameCode(): string {
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const characters = 'ABCEFGHJKMNPQRSTUVWXYZ23456789';
     return Array.from(
       { length: 6 },
       () => characters.charAt(Math.floor(Math.random() * characters.length))
@@ -87,7 +99,7 @@ class SupabaseManager {
       const { data, error } = await this.client
         .from('games')
         .insert({ code: this.generateGameCode(), status: 'waiting' })
-        .select('id, code, status, host_id')
+        .select('id, code, host_id, status, map_id, num_impostors, created_at')
         .single();
 
       if (!error) {
@@ -141,6 +153,7 @@ class SupabaseManager {
     this.playerId = player.id;
     this.hostId = player.id;
     this.isHost = true;
+    this.currentGameStatus = game.status;
     this.setupSubscriptions();
 
     return { gameId: game.id, gameCode: game.code, playerId: player.id };
@@ -160,7 +173,7 @@ class SupabaseManager {
     const normalizedCode = gameCode.trim().toUpperCase();
     const { data: game, error: gameError } = await this.client
       .from('games')
-      .select('id, code, status, host_id')
+      .select('id, code, host_id, status, map_id, num_impostors, created_at')
       .eq('code', normalizedCode)
       .eq('status', 'waiting')
       .maybeSingle();
@@ -203,6 +216,7 @@ class SupabaseManager {
     this.playerId = player.id;
     this.hostId = game.host_id;
     this.isHost = game.host_id === player.id;
+    this.currentGameStatus = game.status;
     this.setupSubscriptions();
 
     return { gameId: game.id, gameCode: game.code, playerId: player.id };
@@ -212,7 +226,7 @@ class SupabaseManager {
     const normalizedCode = gameCode.trim().toUpperCase();
     const { data: game, error: gameError } = await this.client
       .from('games')
-      .select('id, code, status, host_id')
+      .select('id, code, status, host_id, map_id, num_impostors, created_at')
       .eq('code', normalizedCode)
       .maybeSingle();
 
@@ -245,6 +259,7 @@ class SupabaseManager {
   }
 
   private updateCurrentGame(game: Game): void {
+    this.currentGameStatus = game.status;
     this.hostId = game.host_id;
     this.isHost = game.host_id === this.playerId;
     this.onGameUpdate?.(game);
@@ -296,7 +311,12 @@ class SupabaseManager {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
-        (payload) => this.updateCurrentGame(payload.new as Game)
+        (payload) => {
+          const game = payload.new as Game;
+          if (game.status !== this.currentGameStatus) {
+            this.updateCurrentGame(game);
+          }
+        }
       )
       .subscribe((status, error) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -361,7 +381,7 @@ class SupabaseManager {
 
     const { data: playerRows, error: playersError } = await this.client
       .from('players')
-      .select('id, game_id, name, color, connected, alive, role, created_at')
+      .select('id, game_id, name, color, connected, alive, role, player_vote, created_at')
       .eq('game_id', this.gameId);
 
     if (playersError) {
@@ -390,11 +410,23 @@ class SupabaseManager {
     }));
   }
 
+  async getMapTasks(mapId: string): Promise<MapTask[]> {
+    const { data, error } = await this.client
+      .from('maps_tasks')
+      .select('task_id, map_location, task_type, sub_task_type')
+      .eq('map_id', mapId);
+
+    if (error) {
+      throw new Error(`Could not load tasks for map ${mapId}: ${formatSupabaseError(error)}`);
+    }
+    return data as MapTask[];
+  }
+
   async getGame(): Promise<Game | null> {
     if (!this.gameId) return null;
     const { data, error } = await this.client
       .from('games')
-      .select('id, code, status, host_id')
+      .select('id, code, status, host_id, map_id, num_impostors, created_at')
       .eq('id', this.gameId)
       .maybeSingle();
 
@@ -423,6 +455,21 @@ class SupabaseManager {
     if (players.length < 4) {
       throw new Error('At least four players are required to start the game.');
     }
+    if (!game.map_id) {
+      throw new Error('Cannot assign tasks because this game has no map.');
+    }
+
+    const { data: mapTasks, error: mapTasksError } = await this.client
+      .from('maps_tasks')
+      .select('task_id')
+      .eq('map_id', game.map_id);
+    if (mapTasksError) {
+      throw new Error(`Could not load tasks for map ${game.map_id}: ${formatSupabaseError(mapTasksError)}`);
+    }
+    const taskIds = (mapTasks as MapTaskRow[]).map(({ task_id }) => task_id);
+    if (taskIds.length < 3) {
+      throw new Error(`Map ${game.map_id} does not have enough tasks to start the game.`);
+    }
 
     const shuffledPlayers = this.shuffleArray(players);
     const impostorCount = Math.max(1, Math.floor(shuffledPlayers.length / 5));
@@ -448,7 +495,7 @@ class SupabaseManager {
       }
 
       if (!isImpostor) {
-        this.shuffleArray(taskPool).slice(0, 3).forEach((taskId) => {
+        this.shuffleArray(taskIds).slice(0, 3).forEach((taskId) => {
           taskAssignments.push({ game_id: gameId, player_id: player.id, task_id: taskId });
         });
       }
@@ -477,6 +524,35 @@ class SupabaseManager {
       .eq('id', playerId);
     if (error) {
       throw new Error(`Could not update player status: ${error.message}`);
+    }
+  }
+
+  async updateTaskStatus(
+    playerId: string,
+    taskId: string,
+    status: 'not_started' | 'in_progress' | 'completed'
+  ): Promise<void> {
+    if (!this.gameId) throw new Error('Cannot update tasks before joining a game.');
+
+    const updates = status === 'completed'
+      ? { completed: true }
+      : status === 'in_progress'
+        ? { completed: false, time_started: new Date().toISOString() }
+        : { completed: false, time_started: null };
+    const { data, error } = await this.client
+      .from('players_tasks')
+      .update(updates)
+      .eq('game_id', this.gameId)
+      .eq('player_id', playerId)
+      .eq('task_id', taskId)
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Could not update task status: ${formatSupabaseError(error)}`);
+    }
+    if (!data) {
+      throw new Error('Could not update task status: task assignment was not found for this player.');
     }
   }
 

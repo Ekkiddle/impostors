@@ -17,8 +17,8 @@ export default function PlayerList() {
 
   const myId = sessionStorage.getItem('playerId');
   const sortedPlayers = Object.values(players).sort((first, second) => {
-    if (first.id === hostId) return -1;
-    if (second.id === hostId) return 1;
+    if (first.id === myId) return -1;
+    if (second.id === myId) return 1;
     return first.created_at.localeCompare(second.created_at) || first.id.localeCompare(second.id);
   });
 

@@ -11,11 +11,13 @@ import FuelEnginesTask from "../components/tasks/FuelEnginesTask";
 
 export type TaskSize = 'common' | 'small' | 'medium' | 'large';
 
-export interface TaskStep {
-    id: string;
-    label: string;
-    subtask: string;
-    prerequisite?: string; // ID of the step that must be finished first
+export interface TaskWorkflow {
+    sequence: readonly string[];
+}
+
+export interface SubTaskDefinition {
+    key: string;
+    label?: string;
 }
 
 export interface TaskDefinition {
@@ -24,8 +26,8 @@ export interface TaskDefinition {
     total_value: number;
     task_size: TaskSize;
     label?: string;
-    subtasks?: string[]
-    steps?: TaskStep[];
+    subtasks?: readonly SubTaskDefinition[];
+    workflow?: TaskWorkflow;
 }
 
 export const TASK_DEFINITIONS: { [key: string]: TaskDefinition } = {
@@ -49,13 +51,10 @@ export const TASK_DEFINITIONS: { [key: string]: TaskDefinition } = {
         total_value: 4,
         task_size: 'large',
         label: "Refuel Engines",
-        subtasks: ["COLLECT", "DEPOSIT"],
-        steps: [
-            { id: "GET_1", label: "Get Fuel", subtask: "COLLECT" },
-            { id: "DUMP_1", label: "Dump Fuel", subtask: "DEPOSIT", prerequisite: "GET_1" },
-            { id: "GET_2", label: "Get Fuel Again", subtask: "COLLECT", prerequisite: "DUMP_1" },
-            { id: "DUMP_2", label: "Final Fuel Dump", subtask: "DEPOSIT", prerequisite: "GET_2" }
-        ]
+        subtasks: [{ "key": "COLLECT", "label": "Collect Fuel" }, { "key": "DEPOSIT", "label": "Deposit Fuel" }],
+        workflow: {
+            sequence: ["COLLECT", "DEPOSIT", "COLLECT", "DEPOSIT"]
+        }
     },
     "NAVIGATION": {
         task_component: NavigateTask,

@@ -1,12 +1,20 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { shuffleArray } from '../../game/gameManager';
 import DraggableWire from '../DraggableWire';
 import WireTarget from '../WireTarget';
 import { darkenColor } from '../SpaceManIcon';
 
 const WIRE_COLORS = ['#0000ff', '#ff0000', '#ffeb04', '#ff00ff'];
+
+const shuffleArray = <T,>(values: T[]): T[] => {
+    const shuffled = [...values];
+    for (let index = shuffled.length - 1; index > 0; index--) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex]!, shuffled[index]!];
+    }
+    return shuffled;
+};
 
 export default function WireTask({ onSuccess }: { onSuccess?: () => void }) {
     const [connections, setConnections] = useState<string[]>([]);

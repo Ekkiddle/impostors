@@ -1,11 +1,11 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import SupabaseManager, { type Game, type Player } from './supabaseManager';
-import { initSupabaseManager } from './gameManager';
+import SupabaseManager, { type Game, type Player, type MapTask } from './supabaseManager';
 
 interface GameContextType {
   players: Record<string, Player> | null;
+  mapTasks: Record<string, MapTask> | null;
   gameStatus: string;
   hostId: string | null;
   isHost: boolean;
@@ -19,20 +19,21 @@ interface GameContextType {
   updatePlayer: (updates: Partial<Player>) => Promise<void>;
   setPlayerAlive: (playerId: string, alive: boolean) => Promise<void>;
   refreshPlayers: () => Promise<void>;
+  loadMapTasks: (map_id: string | null) => Promise<void>;
+  updateTaskStatus: (playerId: string, taskKey: string, status: 'not_started' | 'in_progress' | 'completed') => Promise<void>;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
 export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [players, setPlayers] = useState<Record<string, Player> | null>(null);
+  const [mapTasks, setMapTasks] = useState<Record<string, MapTask> | null>(null);
   const [gameStatus, setGameStatus] = useState<string>('waiting');
   const [hostId, setHostId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
 
   const [supabaseManager] = useState<SupabaseManager>(() => {
-    const sm = new SupabaseManager();
-    initSupabaseManager(sm);
-    return sm;
+    return new SupabaseManager();
   });
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     supabaseManager.setOnGameUpdate((game: Game) => {
       setGameStatus(game.status);
       setHostId(game.host_id);
+      loadMapTasks(game.map_id);
     });
 
     const storedGameCode = sessionStorage.getItem('gameId');
@@ -56,6 +58,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         if (game) {
           setGameStatus(game.status);
           setHostId(game.host_id);
+          loadMapTasks(game.map_id);
         }
         await refreshPlayers();
       })()
@@ -83,6 +86,17 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         playersObj[player.id] = player;
       });
       setPlayers(playersObj);
+    }
+  };
+
+  const loadMapTasks = async (map_id: string | null) => {
+    if (supabaseManager.gameId && map_id) {
+      const mapTasksData: MapTask[] = await supabaseManager.getMapTasks(map_id);
+      const mapTasksObj: Record<string, MapTask> = {};
+      mapTasksData.forEach(task => {
+        mapTasksObj[task.task_id] = task;
+      });
+      setMapTasks(mapTasksObj);
     }
   };
 
@@ -130,9 +144,14 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     await supabaseManager.setPlayerAlive(playerId, alive);
   };
 
+  const updateTaskStatus = async (playerId: string, taskKey: string, status: 'not_started' | 'in_progress' | 'completed') => {
+    await supabaseManager.updateTaskStatus(playerId, taskKey, status);
+  }
+
   return (
     <GameContext.Provider value={{
       players,
+      mapTasks,
       gameStatus,
       hostId,
       isHost: Boolean(supabaseManager.playerId && hostId === supabaseManager.playerId),
@@ -145,7 +164,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       startGame,
       updatePlayer,
       setPlayerAlive,
-      refreshPlayers
+      refreshPlayers,
+      updateTaskStatus,
+      loadMapTasks,
     }}>
       {children}
     </GameContext.Provider>
