@@ -1,5 +1,3 @@
-import React from "react";
-
 export function darkenColor(hex: string, amount = 0.3) {
   // Remove '#' if present
   hex = hex.replace(/^#/, '');
@@ -24,18 +22,53 @@ export function darkenColor(hex: string, amount = 0.3) {
   );
 }
 
+interface SpaceManIconProps {
+  size?: number;
+  fill?: string;
+  darken?: number;
+  lineArtOnly?: boolean;
+  lineArtColor?: string;
+}
 
-
-export default function SpaceManIcon({ size = 200, fill = '#da2821' }) {
+export default function SpaceManIcon({
+  size = 200,
+  fill = '#da2821',
+  darken = 0,
+  lineArtOnly = false,
+  lineArtColor = '#000000',
+}: SpaceManIconProps) {
   const shadow = darkenColor(fill);
+  const brightness = 1 - Math.min(Math.max(darken, 0), 1);
+
   return (
-    <div style={{ position: 'relative', width: size, height: size }}>
-      <Highlight size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
-      <Visor size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
-      <Vshadow size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
-      <Suit fill={fill} size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
-      <Shadow fill={shadow} size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
-      <Outline size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
+    <div
+      style={{
+        position: 'relative',
+        width: size,
+        height: size,
+        filter: `brightness(${brightness})`,
+      }}
+    >
+      {lineArtOnly ? (
+        <Outline
+          size={size}
+          fill={lineArtColor}
+          style={{ position: 'absolute', top: 0, left: 0 }}
+        />
+      ) : (
+        <>
+          <Highlight size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
+          <Visor size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
+          <Vshadow size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
+          <Suit fill={fill} size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
+          <Shadow fill={shadow} size={size} style={{ position: 'absolute', top: 0, left: 0 }} />
+          <Outline
+            size={size}
+            fill={lineArtColor}
+            style={{ position: 'absolute', top: 0, left: 0 }}
+          />
+        </>
+      )}
     </div>
   );
 };
