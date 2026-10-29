@@ -1,5 +1,19 @@
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
 
+type SupabaseGlobal = typeof globalThis & {
+  __impostorsSupabaseClient?: SupabaseClient;
+};
+
+function getSupabaseClient(url: string, publishableKey: string): SupabaseClient {
+  if (typeof window === 'undefined') {
+    return createClient(url, publishableKey);
+  }
+
+  const browserGlobal = globalThis as SupabaseGlobal;
+  browserGlobal.__impostorsSupabaseClient ??= createClient(url, publishableKey);
+  return browserGlobal.__impostorsSupabaseClient;
+}
+
 export interface Player {
   id: string;
   game_id: string;
@@ -81,7 +95,7 @@ class SupabaseManager {
 
     this.supabaseUrl = url;
     this.publishableKey = publishableKey;
-    this.client = createClient(url, publishableKey);
+    this.client = getSupabaseClient(url, publishableKey);
   }
 
   private generateGameCode(): string {
@@ -554,6 +568,28 @@ class SupabaseManager {
     if (!data) {
       throw new Error('Could not update task status: task assignment was not found for this player.');
     }
+  }
+
+  async validatePlayerTask(taskId: string): Promise<boolean> {
+    if (!this.gameId) throw new Error('Cannot validate tasks before joining a game.');
+    if (!this.playerId) throw new Error('Cannot validate tasks without a player.');
+
+    // checks to see if I can even play this task
+    const { data, error } = await this.client
+      .from('players_tasks')
+      .select('id')
+      .eq('game_id', this.gameId)
+      .eq('player_id', this.playerId)
+      .eq('task_id', taskId)
+      .eq('ready', true)
+      .eq('completed', false)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Could not validate task assignment: ${formatSupabaseError(error)}`);
+    }
+    return data !== null;
   }
 
   private async setPlayerTasks(playerId: string, tasks: string[]): Promise<void> {

@@ -40,9 +40,17 @@ export default function TaskPage() {
   };
 
   return (
-    <div className="flex flex-col items-center h-full w-full gap-6 p-4 font-orbitron">
-      <div className="flex flex-col items-center gap-4 w-full max-w-md">
-        <p className="text-white text-xl font-semibold tracking-widest">TASK NAVIGATOR</p>
+    <main className="practice-page-layout relative flex h-[100dvh] w-full flex-col items-center gap-3 overflow-hidden p-3 font-orbitron">
+      <Link
+        href="/"
+        className="fixed left-3 top-3 z-50 min-w-[4.5rem] rounded-lg border-2 border-slate-400 bg-slate-700 px-3 py-2 text-center text-sm font-medium text-white transition hover:bg-slate-600"
+      >
+        Back
+      </Link>
+      <div className="practice-page-controls flex w-full max-w-md flex-col items-center gap-3">
+        <div className="practice-page-header flex w-full items-center justify-between">
+          <p className="whitespace-nowrap text-sm font-semibold tracking-widest text-white sm:text-xl">TASK NAVIGATOR</p>
+        </div>
 
         <div className="flex w-full gap-3">
           {/* Custom Styled Dropdown */}
@@ -69,13 +77,15 @@ export default function TaskPage() {
       </div>
 
       {/* Task Viewport */}
-      <div className="max-w-[100vw] w-full aspect-square border-4 border-blue-500/30 overflow-hidden rounded-xl shadow-[0_0_30px_rgba(0,0,0,0.5)] ">
+      <div
+        className="practice-task-square aspect-square max-w-full flex-none overflow-hidden rounded-xl border-4 border-blue-500/30 shadow-[0_0_30px_rgba(0,0,0,0.5)]"
+      >
         {ActiveTaskComponent ? (
           <ActiveTaskComponent key={selectedTaskValue} onSuccess={handleTaskComplete} {...taskData?.extraProps ?? {}} />
         ) : (
           <div className="text-white flex items-center justify-center h-full">Select a task</div>
         )}
       </div>
-    </div>
+    </main>
   );
 }

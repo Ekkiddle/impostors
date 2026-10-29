@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import SupabaseManager, { type Game, type Player, type MapTask } from './supabaseManager';
+import { TASK_DEFINITIONS } from '../types/tasks';
 
 interface GameContextType {
   players: Record<string, Player> | null;
@@ -21,12 +22,14 @@ interface GameContextType {
   refreshPlayers: () => Promise<void>;
   loadMapTasks: (map_id: string | null) => Promise<void>;
   updateTaskStatus: (playerId: string, taskKey: string, status: 'not_started' | 'in_progress' | 'completed') => Promise<void>;
+  getScanComponent: (taskKey: string) => Promise<React.ComponentType<any> | null>;
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
 export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [players, setPlayers] = useState<Record<string, Player> | null>(null);
+  const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [mapTasks, setMapTasks] = useState<Record<string, MapTask> | null>(null);
   const [gameStatus, setGameStatus] = useState<string>('waiting');
   const [hostId, setHostId] = useState<string | null>(null);
@@ -46,7 +49,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     supabaseManager.setOnGameUpdate((game: Game) => {
       setGameStatus(game.status);
       setHostId(game.host_id);
-      loadMapTasks(game.map_id);
+      void loadMapTasks(game.map_id).catch(error => {
+        console.error('Error loading map tasks after game update:', error);
+      });
     });
 
     const storedGameCode = sessionStorage.getItem('gameId');
@@ -58,7 +63,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         if (game) {
           setGameStatus(game.status);
           setHostId(game.host_id);
-          loadMapTasks(game.map_id);
+          await loadMapTasks(game.map_id).catch(error => {
+            console.error('Error loading map tasks while restoring game:', error);
+          });
         }
         await refreshPlayers();
       })()
@@ -86,18 +93,41 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         playersObj[player.id] = player;
       });
       setPlayers(playersObj);
+      setCurrentPlayer(
+        supabaseManager.playerId ? playersObj[supabaseManager.playerId] ?? null : null
+      );
     }
   };
 
   const loadMapTasks = async (map_id: string | null) => {
-    if (supabaseManager.gameId && map_id) {
-      const mapTasksData: MapTask[] = await supabaseManager.getMapTasks(map_id);
-      const mapTasksObj: Record<string, MapTask> = {};
-      mapTasksData.forEach(task => {
-        mapTasksObj[task.task_id] = task;
+    if (!supabaseManager.gameId || !map_id) {
+      console.warn('[Map tasks] Cannot load map tasks', {
+        hasActiveGame: Boolean(supabaseManager.gameId),
+        mapId: map_id,
       });
-      setMapTasks(mapTasksObj);
+      setMapTasks(null);
+      return;
     }
+
+    console.info('[Map tasks] Loading tasks for map', map_id);
+    const mapTasksData: MapTask[] = await supabaseManager.getMapTasks(map_id);
+    const mapTasksObj: Record<string, MapTask> = {};
+    mapTasksData.forEach(task => {
+      mapTasksObj[task.task_id] = task;
+    });
+    const tasksWithoutDefinitions = mapTasksData.filter(
+      task => !TASK_DEFINITIONS[task.task_type]
+    );
+    console.info('[Map tasks] Loaded map tasks', {
+      mapId: map_id,
+      count: mapTasksData.length,
+      tasks: mapTasksData,
+      tasksWithoutDefinitions: tasksWithoutDefinitions.map(task => ({
+        taskId: task.task_id,
+        taskType: task.task_type,
+      })),
+    });
+    setMapTasks(mapTasksObj);
   };
 
   const createGame = async (hostName: string) => {
@@ -126,6 +156,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     sessionStorage.removeItem('playerId');
     sessionStorage.removeItem('isHost');
     setPlayers(null);
+    setCurrentPlayer(null);
     setHostId(null);
     setGameStatus('waiting');
   };
@@ -133,7 +164,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const startGame = async () => {
     await supabaseManager.assignRoles();
     const game = await supabaseManager.getGame();
-    if (game) setGameStatus(game.status);
+    if (game) {
+      setGameStatus(game.status);
+      await loadMapTasks(game.map_id);
+    }
   };
 
   const updatePlayer = async (updates: Partial<Player>) => {
@@ -146,6 +180,44 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const updateTaskStatus = async (playerId: string, taskKey: string, status: 'not_started' | 'in_progress' | 'completed') => {
     await supabaseManager.updateTaskStatus(playerId, taskKey, status);
+  }
+
+  const getScanComponent = async (taskKey: string): Promise<React.ComponentType<any> | null> => {
+    const task = mapTasks?.[taskKey];
+    const taskDefinition = TASK_DEFINITIONS[task?.task_type ?? ''];
+    console.info('[QR task] Resolving scanned code', {
+      taskId: taskKey,
+      mapTaskFound: Boolean(task),
+      taskType: task?.task_type ?? null,
+      playerRole: currentPlayer?.role ?? null,
+    });
+
+    if (task && taskDefinition?.task_component) {
+      const isAssigned = currentPlayer?.role == 'impostor' || await supabaseManager.validatePlayerTask(taskKey);
+      console.info('[QR task] Assignment check', {
+        taskId: taskKey,
+        isAssigned,
+        taskType: task.task_type,
+      });
+      if (isAssigned) return taskDefinition.task_component;
+    }
+
+    if (currentPlayer?.role === 'impostor') {
+      const playerToKill = players ? Object.values(players).find(p => p.id === taskKey) : null;
+      if (playerToKill && playerToKill.alive) {
+        console.info('[QR task] Scanned code matches a living player', {
+          playerId: playerToKill.id,
+        });
+      }
+    }
+
+    console.warn('[QR task] No playable task found for scanned code', {
+      taskId: taskKey,
+      mapTaskFound: Boolean(task),
+      hasTaskComponent: Boolean(taskDefinition?.task_component),
+      playerRole: currentPlayer?.role ?? null,
+    });
+    return null;
   }
 
   return (
@@ -167,6 +239,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       refreshPlayers,
       updateTaskStatus,
       loadMapTasks,
+      getScanComponent
     }}>
       {children}
     </GameContext.Provider>

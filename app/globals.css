@@ -20,6 +20,54 @@ body {
   font-family: 'Orbitron', sans-serif;
 }
 
+.practice-task-square {
+  width: min(92vw, max(0px, calc(100dvh - 190px)));
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  .practice-page-layout {
+    flex-direction: row;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+  }
+
+  .practice-page-controls {
+    order: 2;
+    width: clamp(10rem, 30vw, 15rem);
+    max-width: none;
+    flex: 0 0 clamp(10rem, 30vw, 15rem);
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .practice-page-header {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .practice-page-header p {
+    white-space: normal;
+    text-align: center;
+    font-size: 0.9rem;
+  }
+
+  .practice-page-controls>div:last-child {
+    flex-direction: column;
+  }
+
+  .practice-page-controls>div:last-child>a {
+    justify-content: center;
+  }
+
+  .practice-task-square {
+    order: 1;
+    width: min(calc(100dvh - 1rem),
+        max(0px, calc(100vw - clamp(10rem, 30vw, 15rem) - 1.75rem)));
+    max-width: none;
+  }
+}
+
 /* Hide scrollbar for Chrome, Safari and Opera */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
@@ -27,9 +75,8 @@ body {
 
 /* Hide scrollbar for IE, Edge and Firefox */
 .scrollbar-hide {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none;    /* Firefox */
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
 }
-
-
-

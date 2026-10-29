@@ -40,6 +40,7 @@ CREATE TABLE players_tasks (
   game_id UUID REFERENCES games(id) ON DELETE CASCADE,
   player_id UUID REFERENCES players(id) ON DELETE CASCADE,
   task_id TEXT REFERENCES maps_tasks(task_id) ON DELETE CASCADE,
+  ready BOOLEAN DEFAULT true,
   completed BOOLEAN DEFAULT false,
   value INTEGER DEFAULT 0,
   time_started TIMESTAMP WITH TIME ZONE,

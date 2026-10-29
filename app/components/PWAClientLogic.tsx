@@ -15,5 +15,23 @@ export default function PWAClientLogic() {
         lockOrientation();
     }, []);
 
+    useEffect(() => {
+        let consoleInstance: { destroy: () => void } | undefined;
+        let cancelled = false;
+
+        void import('vconsole').then(({ default: VConsole }) => {
+            if (cancelled) return;
+            consoleInstance = new VConsole();
+            console.info('[Mobile console] VConsole initialized');
+        }).catch(error => {
+            console.error('[Mobile console] Could not initialize VConsole:', error);
+        });
+
+        return () => {
+            cancelled = true;
+            consoleInstance?.destroy();
+        };
+    }, []);
+
     return null; // This component doesn't render anything
 }
