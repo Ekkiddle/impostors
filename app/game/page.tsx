@@ -35,8 +35,10 @@ export default function GameLobbyPage() {
     if (!sessionReady) return;
     if (!supabaseManager.playerId || !supabaseManager.gameCode) {
       router.replace('/');
+      return;
     }
-  }, [router, sessionReady, supabaseManager]);
+    if (gameStatus === 'started') router.replace('/game/role');
+  }, [gameStatus, router, sessionReady, supabaseManager]);
 
   const handleStartGame = async () => {
     try {

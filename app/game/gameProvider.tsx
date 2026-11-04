@@ -168,6 +168,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       setGameStatus(game.status);
       await loadMapTasks(game.map_id);
     }
+    await refreshPlayers();
   };
 
   const updatePlayer = async (updates: Partial<Player>) => {

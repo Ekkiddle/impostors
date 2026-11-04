@@ -24,6 +24,47 @@ body {
   width: min(92vw, max(0px, calc(100dvh - 190px)));
 }
 
+@media (orientation: landscape) {
+  .play-page-layout {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .play-page-topbar,
+  .play-page-bottombar {
+    width: 4.5rem;
+    height: 100%;
+    flex: 0 0 4.5rem;
+    flex-direction: column;
+    justify-content: space-around;
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .play-page-topbar {
+    padding-left: max(0.5rem, env(safe-area-inset-left));
+  }
+
+  .play-page-bottombar {
+    padding-right: max(0.5rem, env(safe-area-inset-right));
+    padding-left: 0.5rem;
+  }
+
+  .play-page-main {
+    min-width: 0;
+  }
+
+  .play-page-nav-button {
+    writing-mode: sideways-lr;
+    white-space: nowrap;
+  }
+
+  .play-page-bottombar .play-page-nav-button {
+    flex: 0 1 auto;
+    align-self: center;
+  }
+}
+
 @media (orientation: landscape) and (max-height: 600px) {
   .practice-page-layout {
     flex-direction: row;
