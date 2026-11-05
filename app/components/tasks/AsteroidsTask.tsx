@@ -11,7 +11,7 @@ interface Line {
     endY: number;
 }
 
-export default function AsteroidsTask() {
+export default function AsteroidsTask({ onSuccess }: { onSuccess?: () => void }) {
     const [lines, setLines] = useState<Line[]>([
         { startX: 0, startY: 0, endX: 0, endY: 0 },
         { startX: 0, startY: 0, endX: 0, endY: 0 },
@@ -65,7 +65,7 @@ export default function AsteroidsTask() {
             const next = prev - 1;
             if (next <= 0) {
                 console.log("Mission Accomplished");
-                // Trigger success logic here
+                onSuccess?.();
                 return 0;
             }
             return next;

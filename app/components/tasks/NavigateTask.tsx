@@ -19,7 +19,7 @@ interface Dot {
   id: string;
 }
 
-export default function NavigateTask() {
+export default function NavigateTask({ onSuccess }: { onSuccess?: () => void }) {
   const [points, setPoints] = useState<Point[]>([]);
   const [finishedLines, setFinishedLines] = useState<Point[][]>([]);
   const [circlePos, setCirclePos] = useState<Point>({ x: 0, y: 0 });
@@ -148,6 +148,7 @@ export default function NavigateTask() {
     if (allHit && lastCP && isInCircle(point, lastCP)) {
       setFinishedLines((prev) => [...prev, [...points, point]]);
       setSuccess(true);
+      onSuccess?.();
     } else {
       setPoints([]);
       setCirclePos(pos.start);

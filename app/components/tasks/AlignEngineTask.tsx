@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { EmbossedDiv } from "../CustomDivs";
 
-export default function AlignEngineTask() {
+export default function AlignEngineTask({ onSuccess }: { onSuccess?: () => void }) {
     const [angle, setAngle] = useState(45);
     const angleRef = useRef(angle);
     const [success, setSuccess] = useState(false);
@@ -99,6 +99,7 @@ export default function AlignEngineTask() {
         if (Math.abs(angleRef.current) < 2) {
             setAngle(0);
             setSuccess(true);
+            onSuccess?.();
         }
     };
 
