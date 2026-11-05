@@ -1,4 +1,6 @@
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
+import type { Player, Game, GameResult, MapTask, PlayerTask, PlayerMapTask } from '../types/databaseTypes';
+import GameUtils from './gameUtils';
 
 type SupabaseGlobal = typeof globalThis & {
   __impostorsSupabaseClient?: SupabaseClient;
@@ -12,42 +14,6 @@ function getSupabaseClient(url: string, publishableKey: string): SupabaseClient 
   const browserGlobal = globalThis as SupabaseGlobal;
   browserGlobal.__impostorsSupabaseClient ??= createClient(url, publishableKey);
   return browserGlobal.__impostorsSupabaseClient;
-}
-
-export interface Player {
-  id: string;
-  game_id: string;
-  name: string;
-  color: string;
-  connected: boolean;
-  alive: boolean;
-  role: 'pending' | 'impostor' | 'crewmate';
-  player_vote: string | null;
-  tasks: string[];
-  created_at: string;
-}
-
-export interface Game {
-  id: string;
-  code: string;
-  host_id: string | null;
-  status: 'waiting' | 'started' | 'ended';
-  map_id: string | null;
-  num_impostors: number | null;
-  created_at: string;
-}
-
-export interface MapTask {
-  task_id: string;
-  map_location: string;
-  task_type: string;
-  sub_task_type: string;
-}
-
-interface GameResult {
-  gameId: string;
-  gameCode: string;
-  playerId: string;
 }
 
 type DatabasePlayer = Omit<Player, 'tasks'>;
@@ -66,8 +32,6 @@ function formatSupabaseError(error: { message: string; code?: string; details?: 
     .join(' ');
 }
 
-const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
-
 class SupabaseManager {
   public gameId: string | null = null;
   public gameCode: string | null = null;
@@ -77,10 +41,9 @@ class SupabaseManager {
 
   private currentGameStatus: Game['status'] | null = null;
   private readonly client: SupabaseClient;
-  private readonly supabaseUrl: string;
-  private readonly publishableKey: string;
   private channel: RealtimeChannel | null = null;
   private onPlayersUpdate?: () => void;
+  private onPlayersTasksUpdate?: () => void;
   private onGameUpdate?: (game: Game) => void;
 
   constructor() {
@@ -93,17 +56,7 @@ class SupabaseManager {
       );
     }
 
-    this.supabaseUrl = url;
-    this.publishableKey = publishableKey;
     this.client = getSupabaseClient(url, publishableKey);
-  }
-
-  private generateGameCode(): string {
-    const characters = 'ABCEFGHJKMNPQRSTUVWXYZ23456789';
-    return Array.from(
-      { length: 6 },
-      () => characters.charAt(Math.floor(Math.random() * characters.length))
-    ).join('');
   }
 
   async createGame(hostName: string): Promise<GameResult> {
@@ -112,7 +65,7 @@ class SupabaseManager {
     for (let attempt = 0; attempt < 5; attempt++) {
       const { data, error } = await this.client
         .from('games')
-        .insert({ code: this.generateGameCode(), status: 'waiting' })
+        .insert({ code: GameUtils.generateGameCode(), status: 'waiting' })
         .select('id, code, host_id, status, map_id, num_impostors, created_at')
         .single();
 
@@ -139,7 +92,7 @@ class SupabaseManager {
       .insert({
         game_id: game.id,
         name: hostName,
-        color: this.pickAvailableColor([]),
+        color: GameUtils.pickAvailableColor([]),
         connected: true,
         alive: true,
         role: 'pending',
@@ -213,7 +166,7 @@ class SupabaseManager {
       .insert({
         game_id: game.id,
         name: playerName,
-        color: this.pickAvailableColor(currentPlayers.map(({ color }) => color)),
+        color: GameUtils.pickAvailableColor(currentPlayers.map(({ color }) => color)),
         connected: true,
         alive: true,
         role: 'pending',
@@ -272,73 +225,6 @@ class SupabaseManager {
     this.setupSubscriptions();
   }
 
-  private updateCurrentGame(game: Game): void {
-    this.currentGameStatus = game.status;
-    this.hostId = game.host_id;
-    this.isHost = game.host_id === this.playerId;
-    this.onGameUpdate?.(game);
-  }
-
-  private setupSubscriptions(): void {
-    if (!this.gameId) return;
-
-    if (this.channel) {
-      void this.client.removeChannel(this.channel).then((status) => {
-        if (status !== 'ok') console.error(`Supabase channel cleanup failed: ${status}`);
-      });
-    }
-
-    const gameId = this.gameId;
-    this.channel = this.client
-      .channel(`game:${gameId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'players', filter: `game_id=eq.${gameId}` },
-        () => this.onPlayersUpdate?.()
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'players', filter: `game_id=eq.${gameId}` },
-        () => this.onPlayersUpdate?.()
-      )
-      // Realtime does not support filters on DELETE events; refreshPlayers queries only this game.
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'players' },
-        () => this.onPlayersUpdate?.()
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'players_tasks', filter: `game_id=eq.${gameId}` },
-        () => this.onPlayersUpdate?.()
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'players_tasks', filter: `game_id=eq.${gameId}` },
-        () => this.onPlayersUpdate?.()
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'players_tasks' },
-        () => this.onPlayersUpdate?.()
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
-        (payload) => {
-          const game = payload.new as Game;
-          if (game.status !== this.currentGameStatus) {
-            this.updateCurrentGame(game);
-          }
-        }
-      )
-      .subscribe((status, error) => {
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error('Supabase realtime subscription failed:', error ?? status);
-        }
-      });
-  }
-
   async updatePlayer(updates: Partial<Player>): Promise<void> {
     if (!this.playerId) throw new Error('Cannot update player before joining a game.');
 
@@ -359,35 +245,18 @@ class SupabaseManager {
     }
   }
 
+  // Emily note: this one can be move to a different class
   async removePlayer(playerId: string): Promise<void> {
     await this.removePlayerAndPromote(playerId);
   }
 
+  // Emily note: this one can be moved to a different class (Doesn't make too much sense here)
   async leaveGame(): Promise<void> {
     if (!this.playerId) return;
 
     const playerId = this.playerId;
     await this.removePlayerAndPromote(playerId);
     this.clearCurrentSession(playerId);
-  }
-
-  private async removePlayerAndPromote(playerId: string): Promise<void> {
-    const { error } = await this.client.rpc('leave_game_and_promote', {
-      p_player_id: playerId,
-    });
-    if (error) {
-      throw new Error(`Could not remove player: ${formatSupabaseError(error)}`);
-    }
-  }
-
-  private clearCurrentSession(playerId: string): void {
-    if (this.playerId !== playerId) return;
-    this.disconnect();
-    this.gameId = null;
-    this.gameCode = null;
-    this.playerId = null;
-    this.hostId = null;
-    this.isHost = false;
   }
 
   async getPlayers(): Promise<Player[]> {
@@ -434,6 +303,47 @@ class SupabaseManager {
       throw new Error(`Could not load tasks for map ${mapId}: ${formatSupabaseError(error)}`);
     }
     return data as MapTask[];
+  }
+
+  async getCompletedTasksValue(): Promise<number> {
+    if (!this.gameId) return 0;
+
+    const { data, error } = await this.client
+      .from('players_tasks')
+      .select('value')
+      .eq('game_id', this.gameId)
+      .eq('completed', true);
+
+    if (error) {
+      throw new Error(`Could not load completed tasks: ${formatSupabaseError(error)}`);
+    }
+    return data?.reduce((total, task) => total + (task.value ?? 0), 0) ?? 0;
+  }
+
+  async getTotalTasksValue(): Promise<number> {
+    if (!this.gameId) return 0;
+
+    const { data, error } = await this.client
+      .from('players_tasks')
+      .select('value')
+      .eq('game_id', this.gameId);
+
+    if (error) {
+      throw new Error(`Could not load total tasks: ${formatSupabaseError(error)}`);
+    }
+    return data?.reduce((total, task) => total + (task.value ?? 0), 0) ?? 0;
+  }
+
+  async getPlayerTasks(playerId: string): Promise<PlayerTask[]> {
+    const { data, error } = await this.client
+      .from('players_tasks')
+      .select('player_id, task_id, ready, completed, time_started')
+      .eq('player_id', playerId);
+
+    if (error) {
+      throw new Error(`Could not load tasks for player ${playerId}: ${formatSupabaseError(error)}`);
+    }
+    return data as PlayerTask[];
   }
 
   async getGame(): Promise<Game | null> {
@@ -485,7 +395,7 @@ class SupabaseManager {
       throw new Error(`Map ${game.map_id} does not have enough tasks to start the game.`);
     }
 
-    const shuffledPlayers = this.shuffleArray(players);
+    const shuffledPlayers = GameUtils.shuffleArray(players);
     const impostorCount = Math.max(1, Math.floor(shuffledPlayers.length / 5));
 
     const { error: deleteError } = await this.client
@@ -509,7 +419,7 @@ class SupabaseManager {
       }
 
       if (!isImpostor) {
-        this.shuffleArray(taskIds).slice(0, 3).forEach((taskId) => {
+        GameUtils.shuffleArray(taskIds).slice(0, 3).forEach((taskId) => {
           taskAssignments.push({ game_id: gameId, player_id: player.id, task_id: taskId });
         });
       }
@@ -613,24 +523,98 @@ class SupabaseManager {
     }
   }
 
-  private pickAvailableColor(usedColors: string[]): string {
-    const availableColors = colors.filter((color) => !usedColors.includes(color));
-    return availableColors.length > 0
-      ? availableColors[Math.floor(Math.random() * availableColors.length)]!
-      : '#FFFFFF';
+  private setupSubscriptions(): void {
+    if (!this.gameId) return;
+
+    if (this.channel) {
+      void this.client.removeChannel(this.channel).then((status) => {
+        if (status !== 'ok') console.error(`Supabase channel cleanup failed: ${status}`);
+      });
+    }
+
+    const gameId = this.gameId;
+    this.channel = this.client
+      .channel(`game:${gameId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'players', filter: `game_id=eq.${gameId}` },
+        () => this.onPlayersUpdate?.()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'players', filter: `game_id=eq.${gameId}` },
+        () => this.onPlayersUpdate?.()
+      )
+      // Realtime does not support filters on DELETE events; refreshPlayers queries only this game.
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'players' },
+        () => this.onPlayersUpdate?.()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'players_tasks', filter: `game_id=eq.${gameId}` },
+        () => this.onPlayersTasksUpdate?.()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'players_tasks', filter: `game_id=eq.${gameId}` },
+        () => this.onPlayersTasksUpdate?.()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'players_tasks' },
+        () => this.onPlayersTasksUpdate?.()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` },
+        (payload) => {
+          const game = payload.new as Game;
+          if (game.status !== this.currentGameStatus) {
+            this.updateCurrentGame(game);
+          }
+        }
+      )
+      .subscribe((status, error) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error('Supabase realtime subscription failed:', error ?? status);
+        }
+      });
   }
 
-  private shuffleArray<T>(values: T[]): T[] {
-    const shuffled = [...values];
-    for (let index = shuffled.length - 1; index > 0; index--) {
-      const swapIndex = Math.floor(Math.random() * (index + 1));
-      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex]!, shuffled[index]!];
+  private updateCurrentGame(game: Game): void {
+    this.currentGameStatus = game.status;
+    this.hostId = game.host_id;
+    this.isHost = game.host_id === this.playerId;
+    this.onGameUpdate?.(game);
+  }
+
+  private clearCurrentSession(playerId: string): void {
+    if (this.playerId !== playerId) return;
+    this.disconnect();
+    this.gameId = null;
+    this.gameCode = null;
+    this.playerId = null;
+    this.hostId = null;
+    this.isHost = false;
+  }
+
+  private async removePlayerAndPromote(playerId: string): Promise<void> {
+    const { error } = await this.client.rpc('leave_game_and_promote', {
+      p_player_id: playerId,
+    });
+    if (error) {
+      throw new Error(`Could not remove player: ${formatSupabaseError(error)}`);
     }
-    return shuffled;
   }
 
   setOnPlayersUpdate(callback: () => void): void {
     this.onPlayersUpdate = callback;
+  }
+
+  setOnPlayersTasksUpdate(callback: () => void): void {
+    this.onPlayersTasksUpdate = callback;
   }
 
   setOnGameUpdate(callback: (game: Game) => void): void {
