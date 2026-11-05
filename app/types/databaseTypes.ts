@@ -30,6 +30,7 @@ export interface MapTask {
 }
 
 export interface PlayerTask {
+    id: string;
     player_id: string;
     task_id: string;
     ready: boolean;
@@ -38,6 +39,7 @@ export interface PlayerTask {
 }
 
 export interface PlayerMapTask {
+    id: string;
     player_id: string;
     task_id: string;
     ready: boolean;

@@ -3,18 +3,21 @@
 import QRScanner from '@/app/components/QRScanner';
 import React, { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useGame } from '../gameProvider';
+import { useGame, type TaskLaunch } from '../gameProvider';
 import SpaceManIcon from '@/app/components/SpaceManIcon';
 
 export default function PlayPage() {
   const router = useRouter();
-  const [currentComponent, setCurrentComponent] = useState<React.ComponentType | null>(null);
+  const [currentTask, setCurrentTask] = useState<TaskLaunch | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
+  const [tasksExpanded, setTasksExpanded] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState('');
   const leaveErrorTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isResolvingScan = useRef(false);
-  const { leaveGame, getScanComponent } = useGame();
+  const isCompletingTask = useRef(false);
+  const { leaveGame, getScanComponent, completeTask, completedTasksPercentage, taskProgress } = useGame();
 
   const handleScan = useCallback(async (result: string) => {
     if (isResolvingScan.current) return;
@@ -24,7 +27,9 @@ export default function PlayPage() {
     try {
       const component = await getScanComponent(result);
       if (component) {
-        setCurrentComponent(() => component);
+        isCompletingTask.current = false;
+        setTaskError(null);
+        setCurrentTask(component);
       } else {
         setScanError('No available task found for this QR code.');
       }
@@ -35,6 +40,19 @@ export default function PlayPage() {
       isResolvingScan.current = false;
     }
   }, [getScanComponent]);
+
+  const handleTaskSuccess = useCallback(async () => {
+    if (isCompletingTask.current || !currentTask) return;
+    isCompletingTask.current = true;
+    try {
+      if (currentTask.task) await completeTask(currentTask.task);
+      setCurrentTask(null);
+    } catch (error) {
+      console.error('Error completing task:', error);
+      setTaskError(error instanceof Error ? error.message : 'Could not save task progress.');
+      isCompletingTask.current = false;
+    }
+  }, [completeTask, currentTask]);
 
   const handleError = useCallback((error: string | Error) => {
     console.error('QR scanner error:', error);
@@ -57,8 +75,10 @@ export default function PlayPage() {
   };
 
   const closeTask = () => {
-    setCurrentComponent(null);
+    setCurrentTask(null);
     setScanError(null);
+    setTaskError(null);
+    isCompletingTask.current = false;
   };
 
   return (
@@ -85,10 +105,49 @@ export default function PlayPage() {
           </p>
         )}
       </div>
-      {/* Task bar and drop down to see current tasks assigned*/}
-      <div>
-
-      </div>
+      <section aria-label="Task completion" className="w-full shrink-0 bg-[#172b47] px-3 py-2 text-white">
+        <div className="mb-1 flex items-center justify-between text-xs font-semibold uppercase tracking-wide">
+          <span>Tasks Completed</span>
+          <span>{Math.round(completedTasksPercentage)}%</span>
+        </div>
+        <div
+          role="progressbar"
+          aria-label="Tasks completed"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.max(0, Math.min(100, completedTasksPercentage))}
+          className="h-2 overflow-hidden rounded-full bg-black/60"
+        >
+          <div
+            className="h-full rounded-full bg-emerald-400 transition-[width] duration-300"
+            style={{ width: `${Math.max(0, Math.min(100, completedTasksPercentage))}%` }}
+          />
+        </div>
+      </section>
+      <section className="w-full shrink-0 border-b border-white/15 bg-[#203858] text-white">
+        <button
+          type="button"
+          aria-expanded={tasksExpanded}
+          aria-controls="assigned-task-list"
+          onClick={() => setTasksExpanded(expanded => !expanded)}
+          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-bold"
+        >
+          <span>Tasks</span>
+          <span aria-hidden="true" className="text-lg leading-none">{tasksExpanded ? '−' : '+'}</span>
+        </button>
+        {tasksExpanded && (
+          <ul id="assigned-task-list" className="max-h-36 space-y-1 overflow-y-auto px-3 pb-3 text-xs">
+            {taskProgress.length > 0 ? taskProgress.map(progress => (
+              <li key={progress.taskType} className="flex items-center justify-between gap-3">
+                <span>{progress.label}</span>
+                <span className="shrink-0 tabular-nums">{progress.completed}/{progress.total}</span>
+              </li>
+            )) : (
+              <li className="text-white/70">No tasks assigned</li>
+            )}
+          </ul>
+        )}
+      </section>
       {/* Main content area for the game */}
       <div className="play-page-main relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden p-2 sm:p-4"
         style={{
@@ -117,7 +176,7 @@ export default function PlayPage() {
           ))}
         </div>
         <section
-          aria-label={currentComponent ? 'Selected game task' : 'QR code scanner'}
+          aria-label={currentTask ? 'Selected game task' : 'QR code scanner'}
           className="relative z-10 aspect-square overflow-hidden rounded-[1.6rem] border-[5px] border-[#42494e] p-2 shadow-[0_24px_55px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.5)]"
           style={{
             width: 'min(92vw, 88dvh, 100%)',
@@ -127,7 +186,7 @@ export default function PlayPage() {
           }}
         >
           <div className="relative h-full w-full overflow-hidden rounded-[1.1rem] border border-black/50 bg-[#171d21] shadow-[inset_0_2px_12px_rgba(0,0,0,0.8)]">
-            {currentComponent ? (
+            {currentTask ? (
               <>
                 <button
                   type="button"
@@ -138,8 +197,19 @@ export default function PlayPage() {
                   ×
                 </button>
                 <div className="absolute inset-0 overflow-hidden">
-                  {React.createElement(currentComponent)}
+                  {React.createElement(currentTask.component, {
+                    onSuccess: handleTaskSuccess,
+                    ...(currentTask.subTaskType ? { stage: currentTask.subTaskType } : {}),
+                  })}
                 </div>
+                {taskError && (
+                  <p
+                    role="alert"
+                    className="absolute bottom-3 left-3 right-3 z-40 rounded-md border border-red-300/50 bg-red-950/90 px-3 py-2 text-center text-sm text-white shadow-lg"
+                  >
+                    {taskError}
+                  </p>
+                )}
               </>
             ) : (
               <div className="absolute inset-3 overflow-hidden rounded-lg border border-[#879197] bg-black">

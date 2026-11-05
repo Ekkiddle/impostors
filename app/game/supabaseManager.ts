@@ -337,7 +337,7 @@ class SupabaseManager {
   async getPlayerTasks(playerId: string): Promise<PlayerTask[]> {
     const { data, error } = await this.client
       .from('players_tasks')
-      .select('player_id, task_id, ready, completed, time_started')
+      .select('id, player_id, task_id, ready, completed, time_started')
       .eq('player_id', playerId);
 
     if (error) {
@@ -453,7 +453,7 @@ class SupabaseManager {
 
   async updateTaskStatus(
     playerId: string,
-    taskId: string,
+    taskRowId: string,
     status: 'not_started' | 'in_progress' | 'completed'
   ): Promise<void> {
     if (!this.gameId) throw new Error('Cannot update tasks before joining a game.');
@@ -468,7 +468,7 @@ class SupabaseManager {
       .update(updates)
       .eq('game_id', this.gameId)
       .eq('player_id', playerId)
-      .eq('task_id', taskId)
+      .eq('id', taskRowId)
       .select('id')
       .maybeSingle();
 
@@ -477,6 +477,26 @@ class SupabaseManager {
     }
     if (!data) {
       throw new Error('Could not update task status: task assignment was not found for this player.');
+    }
+  }
+
+  async updateTaskReadiness(
+    playerId: string,
+    tasks: Pick<PlayerTask, 'id' | 'ready'>[]
+  ): Promise<void> {
+    if (!this.gameId) throw new Error('Cannot update tasks before joining a game.');
+
+    for (const task of tasks) {
+      const { error } = await this.client
+        .from('players_tasks')
+        .update({ ready: task.ready })
+        .eq('game_id', this.gameId)
+        .eq('player_id', playerId)
+        .eq('id', task.id);
+
+      if (error) {
+        throw new Error(`Could not update task readiness: ${formatSupabaseError(error)}`);
+      }
     }
   }
 
